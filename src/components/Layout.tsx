@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useWallet } from '../hooks/useWallet';
+import BlockInfo from './BlockInfo';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -65,6 +66,11 @@ export default function Layout({ children }: LayoutProps) {
                   </Link>
                 );
               })}
+            </div>
+
+            {/* Block Info */}
+            <div className="hidden md:block">
+              <BlockInfo />
             </div>
 
             {/* Connect Wallet */}

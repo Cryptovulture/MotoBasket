@@ -115,13 +115,12 @@ export function useBasketDetail(basketId: bigint) {
 
   // --- SDK contracts (WRITES only) ---
 
-  // Convert wallet sender to Address object for SDK (required by getContract)
+  // Use the Address object directly from WalletConnect (NOT reconstructed from string).
+  // Address.fromString(hex) with one param lacks the legacy public key and breaks
+  // downstream SDK calls with "Cannot use 'in' operator to search for 'equals'".
   const senderAddr = useMemo(() => {
-    if (!wallet.senderAddress) return undefined;
-    try {
-      return Address.fromString(wallet.senderAddress);
-    } catch { return undefined; }
-  }, [wallet.senderAddress]);
+    return wallet.senderAddressObj ?? undefined;
+  }, [wallet.senderAddressObj]);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const contract = useMemo((): any => {
@@ -305,7 +304,7 @@ export function useBasketDetail(basketId: bigint) {
         const basketAddr = Address.fromString(BASKET_TOKEN_ADDRESS);
         const path = [motoAddr, basketAddr];
         const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600);
-        const toAddr = senderAddr ?? Address.fromString(wallet.senderAddress);
+        const toAddr = senderAddr ?? wallet.senderAddressObj;
         // 3% slippage tolerance on swap
         const minSwapOut = motoAmount * 97n / 100n;
         const swap = await routerContract.swapExactTokensForTokensSupportingFeeOnTransferTokens(

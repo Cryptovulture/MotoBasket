@@ -26,13 +26,17 @@ function WalletBridge({ children }: { children: ReactNode }) {
         (walletConnect?.hashedMLDSAKey && walletConnect?.publicKey),
     );
 
+    // walletConnect.address is already an Address object from the SDK.
+    // Keep it as-is for getContract() sender param.
+    // Derive a display string separately for the UI.
+    const addressObj = walletConnect?.address ?? undefined;
     let senderAddress: string | undefined;
-    if (walletConnect?.address) {
+    if (addressObj) {
       try {
         senderAddress =
-          typeof walletConnect.address === 'string'
-            ? walletConnect.address
-            : walletConnect.address.toHex?.() ?? String(walletConnect.address);
+          typeof addressObj === 'string'
+            ? addressObj
+            : addressObj.toHex?.() ?? String(addressObj);
       } catch {
         // ignore
       }
@@ -41,7 +45,8 @@ function WalletBridge({ children }: { children: ReactNode }) {
     return {
       ...walletConnect,
       isConnected,
-      senderAddress,
+      senderAddress,         // string for display
+      senderAddressObj: addressObj, // Address object for SDK calls
       p2trAddress: walletConnect?.walletAddress ?? walletConnect?.p2trAddress ?? undefined,
       connect: walletConnect?.openConnectModal ?? (() => {}),
       disconnect: walletConnect?.disconnect ?? (() => {}),

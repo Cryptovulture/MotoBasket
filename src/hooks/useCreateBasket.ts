@@ -65,43 +65,40 @@ export function useCreateBasket() {
   const { provider, network } = useProvider();
   const wallet = useWallet();
 
+  // Use the Address object directly from WalletConnect — not reconstructed from string.
+  const senderAddr = wallet.senderAddressObj ?? undefined;
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const contract = useMemo((): any => {
     if (!EXPERT_INDEX_ADDRESS) return null;
     try {
-      const sender = wallet.senderAddress
-        ? Address.fromString(wallet.senderAddress)
-        : undefined;
       return getContract(
         hexToP2OP(EXPERT_INDEX_ADDRESS),
         ExpertIndexAbi,
         provider,
         network,
-        sender,
+        senderAddr,
       );
     } catch {
       return null;
     }
-  }, [provider, network, wallet.senderAddress]);
+  }, [provider, network, senderAddr]);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const basketTokenContract = useMemo((): any => {
     if (!BASKET_TOKEN_ADDRESS) return null;
     try {
-      const sender = wallet.senderAddress
-        ? Address.fromString(wallet.senderAddress)
-        : undefined;
       return getContract(
         hexToP2OP(BASKET_TOKEN_ADDRESS),
         MotoTokenAbi,
         provider,
         network,
-        sender,
+        senderAddr,
       );
     } catch {
       return null;
     }
-  }, [provider, network, wallet.senderAddress]);
+  }, [provider, network, senderAddr]);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

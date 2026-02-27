@@ -28,15 +28,6 @@ function encodeU256(val: bigint): string {
   return val.toString(16).padStart(64, '0');
 }
 
-/** Decode 32 bytes at a given offset from a Uint8Array into a bigint */
-function readU256(buf: Uint8Array, offset: number): bigint {
-  let hex = '';
-  for (let i = 0; i < 32; i++) {
-    hex += buf[offset + i].toString(16).padStart(2, '0');
-  }
-  return BigInt('0x' + hex);
-}
-
 /** Make a raw JSON-RPC call to the OPNet testnet node */
 async function rpcCall(method: string, params: unknown[]): Promise<unknown> {
   const resp = await fetch(RPC_ENDPOINT, {
@@ -48,6 +39,16 @@ async function rpcCall(method: string, params: unknown[]): Promise<unknown> {
   const json = await resp.json();
   if (json.error) throw new Error(json.error.message || JSON.stringify(json.error));
   return json.result;
+}
+
+/** Safely read a u256 — returns 0n if buffer is too short */
+function safeReadU256(buf: Uint8Array, offset: number): bigint {
+  if (buf.length < offset + 32) return 0n;
+  let hex = '';
+  for (let i = 0; i < 32; i++) {
+    hex += buf[offset + i].toString(16).padStart(2, '0');
+  }
+  return BigInt('0x' + hex);
 }
 
 /** Call a contract method and return the raw result bytes */
@@ -119,8 +120,8 @@ export interface RawComponent {
 export async function fetchStats(): Promise<RawStats> {
   const buf = await contractCall(SEL.getStats);
   return {
-    nextBasketId: readU256(buf, 0),
-    platformFeeBps: readU256(buf, 32),
+    nextBasketId: safeReadU256(buf, 0),
+    platformFeeBps: safeReadU256(buf, 32),
   };
 }
 
@@ -138,42 +139,46 @@ export async function fetchBasketInfo(basketId: bigint): Promise<{
 }> {
   const buf = await contractCall(SEL.getBasketInfo + encodeU256(basketId));
   return {
-    creator: readU256(buf, 0),
-    compCount: readU256(buf, 32),
-    totalShares: readU256(buf, 64),
-    totalMoto: readU256(buf, 96),
-    perfFeeBps: readU256(buf, 128),
-    createdAt: readU256(buf, 160),
-    lockState: readU256(buf, 192),
-    active: readU256(buf, 224),
-    investorCount: readU256(buf, 256),
-    shareToken: readU256(buf, 288),
+    creator: safeReadU256(buf, 0),
+    compCount: safeReadU256(buf, 32),
+    totalShares: safeReadU256(buf, 64),
+    totalMoto: safeReadU256(buf, 96),
+    perfFeeBps: safeReadU256(buf, 128),
+    createdAt: safeReadU256(buf, 160),
+    lockState: safeReadU256(buf, 192),
+    active: safeReadU256(buf, 224),
+    investorCount: safeReadU256(buf, 256),
+    shareToken: safeReadU256(buf, 288),
   };
 }
 
 export async function fetchBasketName(basketId: bigint): Promise<string> {
-  const buf = await contractCall(SEL.getBasketName + encodeU256(basketId));
-  const word1 = readU256(buf, 0);
-  const word2 = readU256(buf, 32);
-  const nameLen = Number(readU256(buf, 64));
+  try {
+    const buf = await contractCall(SEL.getBasketName + encodeU256(basketId));
+    if (buf.length < 96) return 'Unnamed';
+    const word1 = safeReadU256(buf, 0);
+    const word2 = safeReadU256(buf, 32);
+    const nameLen = Number(safeReadU256(buf, 64));
 
-  if (nameLen === 0) return 'Unnamed';
+    if (nameLen === 0 || nameLen > 64) return 'Unnamed';
 
-  // u256.fromBytes() in AS is little-endian: byte[0] of name → LSB of u256
-  const bytes = new Uint8Array(64);
-  for (let i = 0; i < 32; i++) {
-    bytes[i] = Number((word1 >> BigInt(i * 8)) & 0xFFn);
+    const bytes = new Uint8Array(64);
+    for (let i = 0; i < 32; i++) {
+      bytes[i] = Number((word1 >> BigInt(i * 8)) & 0xFFn);
+    }
+    for (let i = 0; i < 32; i++) {
+      bytes[32 + i] = Number((word2 >> BigInt(i * 8)) & 0xFFn);
+    }
+    return new TextDecoder().decode(bytes.slice(0, nameLen));
+  } catch {
+    return 'Unnamed';
   }
-  for (let i = 0; i < 32; i++) {
-    bytes[32 + i] = Number((word2 >> BigInt(i * 8)) & 0xFFn);
-  }
-  return new TextDecoder().decode(bytes.slice(0, nameLen));
 }
 
 export async function fetchBasketNAV(basketId: bigint): Promise<bigint> {
   try {
     const buf = await contractCall(SEL.getBasketNAV + encodeU256(basketId));
-    return readU256(buf, 0);
+    return safeReadU256(buf, 0);
   } catch {
     return 0n;
   }
@@ -184,9 +189,9 @@ export async function fetchComponent(basketId: bigint, index: bigint): Promise<R
     SEL.getComponent + encodeU256(basketId) + encodeU256(index),
   );
   return {
-    token: readU256(buf, 0),
-    weight: readU256(buf, 32),
-    holding: readU256(buf, 64),
+    token: safeReadU256(buf, 0),
+    weight: safeReadU256(buf, 32),
+    holding: safeReadU256(buf, 64),
   };
 }
 
@@ -213,7 +218,7 @@ export async function fetchBalanceOf(tokenAddress: string, ownerAddress: string)
       OP20_SEL.balanceOf + encodeAddressParam(ownerAddress),
       tokenAddress,
     );
-    return readU256(buf, 0);
+    return safeReadU256(buf, 0);
   } catch {
     return 0n;
   }
@@ -226,13 +231,17 @@ export async function fetchMotoBalance(ownerAddress: string): Promise<bigint> {
 
 /** Fetch investor position for a basket */
 export async function fetchInvestorPosition(basketId: bigint, investorAddress: string): Promise<RawInvestorPosition> {
-  const buf = await contractCall(
-    SEL.getInvestorPosition + encodeU256(basketId) + encodeAddressParam(investorAddress),
-  );
-  return {
-    shares: readU256(buf, 0),
-    costBasis: readU256(buf, 32),
-  };
+  try {
+    const buf = await contractCall(
+      SEL.getInvestorPosition + encodeU256(basketId) + encodeAddressParam(investorAddress),
+    );
+    return {
+      shares: safeReadU256(buf, 0),
+      costBasis: safeReadU256(buf, 32),
+    };
+  } catch {
+    return { shares: 0n, costBasis: 0n };
+  }
 }
 
 /** Fetch everything for all baskets */

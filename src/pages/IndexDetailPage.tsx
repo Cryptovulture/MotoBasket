@@ -9,205 +9,8 @@ import {
   parseBasketInput,
 } from '../hooks/useBasketDetail';
 import { useWallet } from '../hooks/useWallet';
-import { findMockIndex, isExpertIndex, MOCK_EXPERT_INDEXES } from '../config/mockIndexes';
 import { TOKEN_META, BASKET_DISPLAY_NAMES, EXPERT_BASKETS } from '../config/contracts';
 import { u256ToAddress } from '../utils/rawRpc';
-import {
-  getSymbolPriceUSD,
-  getSymbolDecimals,
-  tokenToUSD,
-  formatUSD,
-  PRICES_ARE_SIMULATED,
-} from '../config/prices';
-
-function isNumericId(value: string | undefined): boolean {
-  if (!value) return false;
-  try {
-    const n = BigInt(value);
-    return n > 0n;
-  } catch {
-    return false;
-  }
-}
-
-export default function IndexDetailPage() {
-  const { address } = useParams<{ address: string }>();
-
-  // Route expert-danny to on-chain basket 4
-  if (address === 'expert-danny') {
-    const danny = MOCK_EXPERT_INDEXES.find(e => e.id === 'danny');
-    if (danny?.onChainBasketId) {
-      return <OnChainIndexDetail basketId={BigInt(danny.onChainBasketId)} />;
-    }
-  }
-
-  if (!isNumericId(address)) {
-    return <MockIndexDetail slug={address} />;
-  }
-
-  return <OnChainIndexDetail basketId={BigInt(address!)} />;
-}
-
-const formatNumber = (num: number) => {
-  if (num >= 1000000) return `$${(num / 1000000).toFixed(2)}M`;
-  if (num >= 1000) return `$${(num / 1000).toFixed(0)}K`;
-  return `$${num}`;
-};
-
-const formatPercentage = (num: number) => {
-  const sign = num >= 0 ? '+' : '';
-  return `${sign}${num.toFixed(1)}%`;
-};
-
-function MockIndexDetail({ slug }: { slug: string | undefined }) {
-  const index = findMockIndex(slug);
-
-  if (!index) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <Link to="/" className="text-dark-400 hover:text-bitcoin-500 transition-colors text-sm mb-6 inline-block">
-          &larr; Back to Indexes
-        </Link>
-        <div className="text-center py-20">
-          <h1 className="text-3xl font-display font-bold text-white mb-4">Index Not Found</h1>
-          <Link to="/" className="text-bitcoin-500 hover:text-bitcoin-400 transition-colors">Back to Indexes</Link>
-        </div>
-      </div>
-    );
-  }
-
-  const isExpert = isExpertIndex(index);
-  const perf = index.performance;
-
-  return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      <Link to="/" className="text-dark-400 hover:text-bitcoin-500 transition-colors text-sm mb-6 inline-block">
-        &larr; Back to Indexes
-      </Link>
-
-      <div className="flex items-start justify-between mb-8">
-        <div className="flex items-center space-x-4">
-          {isExpert && (
-            <img
-              src={(index as any).avatar}
-              alt={(index as any).creator}
-              className="w-16 h-16 rounded-full object-cover border-2 border-bitcoin-500/30"
-            />
-          )}
-          <div>
-            <div className="flex items-center space-x-3 mb-2">
-              <h1 className="text-4xl font-display font-bold text-white">{index.name}</h1>
-              <span className="px-3 py-1 bg-green-500/10 text-green-500 text-xs font-medium rounded border border-green-500/20">
-                Live
-              </span>
-            </div>
-            {isExpert && (
-              <p className="text-dark-400">by <span className="text-bitcoin-500 font-medium">{(index as any).creator}</span></p>
-            )}
-            {!isExpert && <p className="text-dark-400">{(index as any).fullName}</p>}
-          </div>
-        </div>
-        <div className="text-right">
-          <div className="text-3xl font-display font-bold text-white">{formatNumber(index.tvl)}</div>
-          <div className="text-sm text-dark-500">Total Value Locked</div>
-        </div>
-      </div>
-
-      <p className="text-dark-300 text-lg mb-8">{index.description}</p>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        {[
-          { label: '24H', value: perf.day },
-          { label: '7D', value: perf.week },
-          { label: '30D', value: perf.month },
-          { label: '1Y', value: perf.year },
-        ].map(p => (
-          <div key={p.label} className="bg-dark-800 border border-dark-700 rounded-xl p-4">
-            <div className="text-dark-500 text-xs mb-1 uppercase tracking-wide">{p.label}</div>
-            <div className={`text-xl font-mono font-bold ${p.value >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-              {formatPercentage(p.value)}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-3 gap-4 mb-8">
-        <div className="bg-dark-800 border border-dark-700 rounded-xl p-4">
-          <div className="text-dark-500 text-xs mb-1 uppercase tracking-wide">
-            {isExpert ? 'Perf Fee' : 'Mgmt Fee'}
-          </div>
-          <div className="text-bitcoin-500 font-mono font-semibold text-lg">
-            {isExpert ? (index as any).performanceFee : (index as any).fee}%
-          </div>
-        </div>
-        <div className="bg-dark-800 border border-dark-700 rounded-xl p-4">
-          <div className="text-dark-500 text-xs mb-1 uppercase tracking-wide">Investors</div>
-          <div className="text-white font-mono font-semibold text-lg">{index.investors.toLocaleString()}</div>
-        </div>
-        <div className="bg-dark-800 border border-dark-700 rounded-xl p-4">
-          <div className="text-dark-500 text-xs mb-1 uppercase tracking-wide">Components</div>
-          <div className="text-white font-mono font-semibold text-lg">{index.components.length}</div>
-        </div>
-      </div>
-
-      <div className="bg-dark-800 border border-dark-700 rounded-2xl p-6 mb-8">
-        <h2 className="text-xl font-display font-bold text-white mb-4">Portfolio Composition</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-dark-700">
-                <th className="text-left py-3 px-4 text-dark-500 text-xs uppercase tracking-wide">#</th>
-                <th className="text-left py-3 px-4 text-dark-500 text-xs uppercase tracking-wide">Token</th>
-                <th className="text-left py-3 px-4 text-dark-500 text-xs uppercase tracking-wide">Name</th>
-                <th className="text-right py-3 px-4 text-dark-500 text-xs uppercase tracking-wide">Weight</th>
-                <th className="text-left py-3 px-4 text-dark-500 text-xs uppercase tracking-wide">Allocation</th>
-              </tr>
-            </thead>
-            <tbody>
-              {index.components.map((c, i) => (
-                <tr key={i} className="border-b border-dark-700/50 hover:bg-dark-700/30 transition-colors">
-                  <td className="py-3 px-4 text-dark-500 text-sm">{i + 1}</td>
-                  <td className="py-3 px-4">
-                    <span className="inline-flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full bg-gradient-to-br from-bitcoin-500 to-bitcoin-600 flex items-center justify-center text-[10px] font-bold text-white">
-                        {c.symbol[0]}
-                      </div>
-                      <span className="font-mono text-sm text-bitcoin-400 font-semibold">{c.symbol}</span>
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 text-dark-300 text-sm">{c.name}</td>
-                  <td className="py-3 px-4 text-right font-mono text-sm text-green-500 font-semibold">{c.weight}%</td>
-                  <td className="py-3 px-4">
-                    <div className="w-full bg-dark-700 rounded-full h-2">
-                      <div
-                        className="bg-gradient-to-r from-bitcoin-500 to-bitcoin-600 h-2 rounded-full transition-all"
-                        style={{ width: `${c.weight}%` }}
-                      />
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className="bg-dark-800 border border-bitcoin-500/20 rounded-2xl p-8 text-center">
-        <p className="text-dark-300 text-lg mb-4">Connect your wallet to invest in this index with MOTO</p>
-        <Link
-          to="/"
-          className="inline-block px-8 py-4 bg-gradient-to-r from-bitcoin-500 to-bitcoin-600 hover:from-bitcoin-600 hover:to-bitcoin-700 text-white font-medium rounded-xl transition-all transform hover:scale-105 active:scale-95 shadow-lg shadow-bitcoin-500/20"
-        >
-          Browse All Indexes
-        </Link>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// On-chain index detail
-// ---------------------------------------------------------------------------
 
 const TOKEN_COLORS: Record<string, string> = {
   MOTO: 'from-green-500 to-emerald-500',
@@ -231,12 +34,45 @@ const TOKEN_COLORS: Record<string, string> = {
   BERY: 'from-purple-500 to-pink-500',
 };
 
+function formatNAV(value: bigint): string {
+  const num = Number(value) / 1e8;
+  if (num >= 1_000_000) return `$${(num / 1_000_000).toFixed(2)}M`;
+  if (num >= 1_000) return `$${(num / 1_000).toFixed(1)}K`;
+  if (num > 0) return num.toFixed(4);
+  return '--';
+}
+
+export default function IndexDetailPage() {
+  const { address } = useParams<{ address: string }>();
+
+  // All routes use on-chain basket IDs
+  let basketId: bigint;
+  try {
+    basketId = BigInt(address ?? '0');
+    if (basketId <= 0n) throw new Error();
+  } catch {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <Link to="/" className="text-dark-400 hover:text-bitcoin-500 transition-colors text-sm mb-6 inline-block">
+          &larr; Back to Indexes
+        </Link>
+        <div className="text-center py-20">
+          <h1 className="text-3xl font-display font-bold text-white mb-4">Index Not Found</h1>
+          <Link to="/" className="text-bitcoin-500 hover:text-bitcoin-400 transition-colors">Back to Indexes</Link>
+        </div>
+      </div>
+    );
+  }
+
+  return <OnChainIndexDetail basketId={basketId} />;
+}
+
 function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
   const wallet = useWallet();
   const isConnected = wallet.isConnected;
 
   const {
-    info, name, nav, components, position, basketBalance, motoBalance,
+    info, name, nav, components, position, motoBalance,
     loading, loadingStep, initialLoading, error,
     invest, withdraw, scheduleRebalance, executeRebalance, collectPerfFee,
   } = useBasketDetail(basketId);
@@ -251,33 +87,7 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
     return `${hex.slice(0, 8)}...${hex.slice(-4)}`;
   };
 
-  // --- Index price calculation (mock) ---
-  // NAV = sum of (holding × token_price) for each component
-  const indexNAVusd = components.reduce((sum, c) => {
-    const tokenHex = u256ToAddress(c.token);
-    const meta = TOKEN_META[tokenHex];
-    if (!meta) return sum;
-    const decimals = getSymbolDecimals(meta.symbol);
-    const human = Number(c.holding) / 10 ** decimals;
-    return sum + human * getSymbolPriceUSD(meta.symbol);
-  }, 0);
-
-  const totalSharesNum = info ? Number(info.totalShares) / 1e8 : 0;
-  const sharePriceUSD = totalSharesNum > 0 ? indexNAVusd / totalSharesNum : 0;
-  const sharePriceMOTO = getSymbolPriceUSD('MOTO') > 0 ? sharePriceUSD / getSymbolPriceUSD('MOTO') : 0;
-
-  // Buy estimates
-  const buyMotoNum = parseFloat(buyInput) || 0;
-  const buyUSD = buyMotoNum * getSymbolPriceUSD('MOTO');
-  const estimatedShares = sharePriceMOTO > 0 && buyMotoNum > 0
-    ? (buyMotoNum / sharePriceMOTO).toFixed(4)
-    : null;
-
-  // Sell estimates
-  const sellSharesNum = parseFloat(sellInput) || 0;
-  const sellValueUSD = sellSharesNum * sharePriceUSD;
-
-  const displayName = BASKET_DISPLAY_NAMES[basketId.toString()] || name;
+  const displayName = BASKET_DISPLAY_NAMES[basketId.toString()] || name || `Index #${basketId}`;
   const totalWeight = components.reduce((s, c) => s + Number(c.weight), 0);
 
   const handleBuy = async () => {
@@ -293,7 +103,7 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
 
   const handleSell = async () => {
     if (!sellInput) return;
-    const amount = parseBasketInput(sellInput); // shares use 8 decimals
+    const amount = parseBasketInput(sellInput);
     if (amount <= 0n) return;
     const tx = await withdraw(amount);
     if (tx) {
@@ -308,7 +118,6 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
         <Link to="/" className="text-dark-400 hover:text-bitcoin-500 transition-colors text-sm mb-6 inline-block">
           &larr; Back to Indexes
         </Link>
-        {/* Loading skeleton */}
         <div className="animate-pulse space-y-6">
           <div className="flex items-start justify-between">
             <div>
@@ -328,11 +137,6 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
               <div className="bg-dark-900 rounded-xl p-4 h-24" />
               <div className="bg-dark-900 rounded-xl p-4 h-24" />
             </div>
-          </div>
-          <div className="grid grid-cols-3 gap-4">
-            <div className="bg-dark-800 border border-dark-700 rounded-xl p-4 h-20" />
-            <div className="bg-dark-800 border border-dark-700 rounded-xl p-4 h-20" />
-            <div className="bg-dark-800 border border-dark-700 rounded-xl p-4 h-20" />
           </div>
         </div>
         <p className="text-dark-400 text-center mt-8">Loading index...</p>
@@ -402,10 +206,9 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
         </div>
         <div className="text-right">
           <div className="text-3xl font-display font-bold text-white">
-            {sharePriceUSD > 0 ? formatUSD(sharePriceUSD) : '--'}
+            {formatNAV(nav)} MOTO
           </div>
-          <div className="text-sm text-dark-500">Share Price</div>
-          <div className="text-lg text-dark-300 mt-1">{formatUSD(indexNAVusd)} NAV</div>
+          <div className="text-sm text-dark-500">NAV</div>
         </div>
       </div>
 
@@ -465,9 +268,7 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
               const pct = totalWeight > 0 ? (Number(c.weight) / totalWeight) * 100 : 0;
               const gradient = meta ? (TOKEN_COLORS[meta.symbol] || 'from-gray-500 to-gray-600') : 'from-gray-500 to-gray-600';
               const symbol = meta?.symbol ?? '?';
-              const decimals = meta ? getSymbolDecimals(symbol) : 8;
-              const holdingUSD = meta ? tokenToUSD(c.holding, symbol) : 0;
-              const priceUSD = getSymbolPriceUSD(symbol);
+              const decimals = meta?.decimals ?? 8;
               return (
                 <div key={i} className="bg-dark-900 border border-dark-700 rounded-xl p-4">
                   <div className="flex items-center gap-3 mb-2">
@@ -478,9 +279,6 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
                       <div className="text-white font-semibold text-sm">{meta?.symbol ?? shortenAddress(tokenHex)}</div>
                       {meta && <div className="text-dark-500 text-xs">{meta.name}</div>}
                     </div>
-                    {priceUSD > 0 && (
-                      <div className="ml-auto text-dark-400 text-xs font-mono">{formatUSD(priceUSD)}</div>
-                    )}
                   </div>
                   <div className="flex justify-between items-end">
                     <div className="text-green-500 font-mono font-bold text-lg">{pct.toFixed(1)}%</div>
@@ -488,9 +286,6 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
                       <div className="text-dark-500 text-xs font-mono">
                         {formatToken(c.holding, decimals)} held
                       </div>
-                      {holdingUSD > 0 && (
-                        <div className="text-dark-400 text-xs font-mono">{formatUSD(holdingUSD)}</div>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -501,31 +296,24 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
       )}
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <div className="bg-dark-800 border border-dark-700 rounded-xl p-4">
           <div className="text-dark-500 text-xs mb-1 uppercase tracking-wide">Total Shares</div>
           <div className="text-white font-mono font-semibold">{formatBasket(info.totalShares)}</div>
         </div>
         <div className="bg-dark-800 border border-dark-700 rounded-xl p-4">
-          <div className="text-dark-500 text-xs mb-1 uppercase tracking-wide">Share Price</div>
-          <div className="text-white font-mono font-semibold">
-            {sharePriceUSD > 0 ? formatUSD(sharePriceUSD) : '--'}
-          </div>
+          <div className="text-dark-500 text-xs mb-1 uppercase tracking-wide">NAV</div>
+          <div className="text-white font-mono font-semibold">{formatNAV(nav)} MOTO</div>
         </div>
         <div className="bg-dark-800 border border-dark-700 rounded-xl p-4">
           <div className="text-dark-500 text-xs mb-1 uppercase tracking-wide">Perf Fee</div>
           <div className="text-bitcoin-500 font-mono font-semibold">{formatBps(info.perfFeeBps)}</div>
         </div>
-      </div>
-
-      {/* Price disclaimer */}
-      {PRICES_ARE_SIMULATED && (
-        <div className="bg-dark-800/50 border border-dark-700/50 rounded-xl px-4 py-2 mb-6 text-center">
-          <p className="text-dark-500 text-xs">
-            Prices are estimated (testnet). Live pricing will use MotoSwap pool reserves.
-          </p>
+        <div className="bg-dark-800 border border-dark-700 rounded-xl p-4">
+          <div className="text-dark-500 text-xs mb-1 uppercase tracking-wide">Investors</div>
+          <div className="text-white font-mono font-semibold">{Number(info.investorCount) > 0 ? info.investorCount.toString() : '--'}</div>
         </div>
-      )}
+      </div>
 
       {/* Buy / Sell */}
       {isConnected && isActive && (
@@ -536,10 +324,7 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
             <div className="space-y-2 mb-4">
               <div className="flex justify-between text-sm">
                 <span className="text-dark-400">MOTO Balance</span>
-                <span className="text-white font-mono">
-                  {formatMoto(motoBalance)}
-                  <span className="text-dark-500 ml-2">{formatUSD(tokenToUSD(motoBalance, 'MOTO'))}</span>
-                </span>
+                <span className="text-white font-mono">{formatMoto(motoBalance)}</span>
               </div>
             </div>
             <div className="flex gap-2 mb-3">
@@ -571,49 +356,6 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
                 {loading ? (loadingStep || '...') : 'Buy'}
               </button>
             </div>
-            {/* Breakdown */}
-            {buyInput && buyMotoNum > 0 && (
-              <div className="bg-dark-900 rounded-lg p-3 space-y-1.5">
-                <div className="flex justify-between text-xs">
-                  <span className="text-dark-400">Value</span>
-                  <span className="text-white font-mono">{formatUSD(buyUSD)}</span>
-                </div>
-                {estimatedShares && (
-                  <div className="flex justify-between text-xs">
-                    <span className="text-dark-400">Est. Shares</span>
-                    <span className="text-green-500 font-mono">~{estimatedShares}</span>
-                  </div>
-                )}
-                {/* Component breakdown */}
-                {components.length > 0 && (
-                  <>
-                    <div className="border-t border-dark-700 pt-1.5 mt-1.5">
-                      <div className="text-dark-500 text-xs mb-1">Allocation breakdown:</div>
-                    </div>
-                    {components.map((c, i) => {
-                      const tokenHex = u256ToAddress(c.token);
-                      const meta = TOKEN_META[tokenHex];
-                      const pct = totalWeight > 0 ? Number(c.weight) / totalWeight : 0;
-                      const motoForComp = buyMotoNum * pct;
-                      const usdForComp = motoForComp * getSymbolPriceUSD('MOTO');
-                      const tokPrice = meta ? getSymbolPriceUSD(meta.symbol) : 0;
-                      const tokensReceived = tokPrice > 0 ? usdForComp / tokPrice : 0;
-                      return (
-                        <div key={i} className="flex justify-between text-xs">
-                          <span className="text-dark-400">
-                            {meta?.symbol ?? '?'} ({(pct * 100).toFixed(0)}%)
-                          </span>
-                          <span className="text-dark-300 font-mono">
-                            ~{tokensReceived.toFixed(2)} {meta?.symbol ?? '?'}
-                            <span className="text-dark-500 ml-1">({formatUSD(usdForComp)})</span>
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </>
-                )}
-              </div>
-            )}
           </div>
 
           {/* Sell Panel */}
@@ -622,14 +364,7 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
             <div className="space-y-2 mb-4">
               <div className="flex justify-between text-sm">
                 <span className="text-dark-400">Your Shares</span>
-                <span className="text-green-500 font-mono">
-                  {formatBasket(position?.shares ?? 0n)}
-                  {position && position.shares > 0n && (
-                    <span className="text-dark-500 ml-2">
-                      {formatUSD(Number(position.shares) / 1e8 * sharePriceUSD)}
-                    </span>
-                  )}
-                </span>
+                <span className="text-green-500 font-mono">{formatBasket(position?.shares ?? 0n)}</span>
               </div>
             </div>
             <div className="flex gap-2 mb-3">
@@ -661,20 +396,6 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
                 {loading ? (loadingStep || '...') : 'Sell'}
               </button>
             </div>
-            {sellInput && sellSharesNum > 0 && (
-              <div className="bg-dark-900 rounded-lg p-3 space-y-1.5">
-                <div className="flex justify-between text-xs">
-                  <span className="text-dark-400">Est. Value</span>
-                  <span className="text-white font-mono">{formatUSD(sellValueUSD)}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-dark-400">Est. MOTO received</span>
-                  <span className="text-green-500 font-mono">
-                    ~{getSymbolPriceUSD('MOTO') > 0 ? (sellValueUSD / getSymbolPriceUSD('MOTO')).toFixed(4) : '--'} MOTO
-                  </span>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -689,10 +410,8 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
               <div className="text-green-500 font-mono font-semibold text-lg">{formatBasket(position.shares)}</div>
             </div>
             <div>
-              <div className="text-dark-500 text-xs mb-1 uppercase tracking-wide">Current Value</div>
-              <div className="text-white font-mono font-semibold text-lg">
-                {formatUSD(Number(position.shares) / 1e8 * sharePriceUSD)}
-              </div>
+              <div className="text-dark-500 text-xs mb-1 uppercase tracking-wide">Cost Basis</div>
+              <div className="text-white font-mono font-semibold text-lg">{formatMoto(position.costBasis)} MOTO</div>
             </div>
             <div>
               <div className="text-dark-500 text-xs mb-1 uppercase tracking-wide">Share Token</div>

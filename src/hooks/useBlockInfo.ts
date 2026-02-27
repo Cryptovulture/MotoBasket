@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useProvider } from './useProvider';
 import { RPC_URL } from '../config/contracts';
 
 interface BlockInfo {
@@ -10,18 +9,30 @@ interface BlockInfo {
 }
 
 const POLL_INTERVAL = 5_000;
-// OPNet testnet (Signet fork) targets ~10 min blocks, regtest ~30s
 const BLOCK_TIME_SECONDS = RPC_URL.includes('testnet') ? 600 : 30;
+const RPC_ENDPOINT = `${RPC_URL}/api/v1/json-rpc`;
+
+let rpcId = 1000;
+
+async function rpcCall(method: string, params: unknown[]): Promise<unknown> {
+  const resp = await fetch(RPC_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', method, params, id: ++rpcId }),
+  });
+  if (!resp.ok) throw new Error(`RPC HTTP ${resp.status}`);
+  const json = await resp.json();
+  if (json.error) throw new Error(json.error.message);
+  return json.result;
+}
 
 export function useBlockInfo(): BlockInfo {
-  const { provider } = useProvider();
   const [blockNumber, setBlockNumber] = useState<number | null>(null);
-  const [lastBlockTime, setLastBlockTime] = useState<number>(Date.now());
-  const [secondsUntilBlock, setSecondsUntilBlock] = useState(BLOCK_TIME_SECONDS);
+  const [blockTimestampMs, setBlockTimestampMs] = useState<number | null>(null);
+  const [secondsUntilBlock, setSecondsUntilBlock] = useState(0);
   const [isConnected, setIsConnected] = useState(false);
   const prevBlock = useRef<number | null>(null);
 
-  // Derive network name from the RPC URL — not the Network object
   const networkName = RPC_URL.includes('testnet')
     ? 'Testnet'
     : RPC_URL.includes('regtest')
@@ -30,19 +41,30 @@ export function useBlockInfo(): BlockInfo {
 
   const fetchBlock = useCallback(async () => {
     try {
-      const num = await provider.getBlockNumber();
-      const n = typeof num === 'bigint' ? Number(num) : Number(num);
+      // btc_blockNumber returns hex string like "0x9f3"
+      const hex = await rpcCall('btc_blockNumber', []) as string;
+      const n = parseInt(hex, 16);
       setIsConnected(true);
+      setBlockNumber(n);
 
       if (prevBlock.current === null || n > prevBlock.current) {
-        setLastBlockTime(Date.now());
         prevBlock.current = n;
+        try {
+          // btc_getBlockByNumber returns { time: <milliseconds>, ... }
+          const block = await rpcCall('btc_getBlockByNumber', [n.toString(), false]) as {
+            time?: number;
+          };
+          if (block?.time) {
+            setBlockTimestampMs(block.time);
+          }
+        } catch {
+          // ignore
+        }
       }
-      setBlockNumber(n);
     } catch {
       setIsConnected(false);
     }
-  }, [provider]);
+  }, []);
 
   useEffect(() => {
     fetchBlock();
@@ -50,15 +72,18 @@ export function useBlockInfo(): BlockInfo {
     return () => clearInterval(id);
   }, [fetchBlock]);
 
-  // Countdown to next expected block
   useEffect(() => {
     const id = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - lastBlockTime) / 1000);
-      const remaining = Math.max(0, BLOCK_TIME_SECONDS - elapsed);
+      if (blockTimestampMs === null) {
+        setSecondsUntilBlock(0);
+        return;
+      }
+      const elapsedSec = Math.floor((Date.now() - blockTimestampMs) / 1000);
+      const remaining = Math.max(0, BLOCK_TIME_SECONDS - elapsedSec);
       setSecondsUntilBlock(remaining);
     }, 1000);
     return () => clearInterval(id);
-  }, [lastBlockTime]);
+  }, [blockTimestampMs]);
 
   return { blockNumber, secondsUntilBlock, networkName, isConnected };
 }

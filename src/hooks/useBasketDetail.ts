@@ -1,19 +1,16 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { getContract, MOTOSWAP_ROUTER_ABI } from 'opnet';
-import { Address } from '@btc-vision/transaction';
+import { getContract } from 'opnet';
 import { useProvider } from './useProvider';
 import { useWallet } from './useWallet';
 import { ExpertIndexAbi } from '../abi/ExpertIndexAbi';
 import { MotoTokenAbi } from '../abi/MotoTokenAbi';
 import {
   EXPERT_INDEX_ADDRESS,
-  BASKET_TOKEN_ADDRESS,
   MOTO_TOKEN_ADDRESS,
   BASKET_DECIMALS,
   MOTO_DECIMALS,
   INDEX_BASE_TOKEN,
   INDEX_BASE_DECIMALS,
-  MOTOSWAP_ROUTER_ADDRESS,
 } from '../config/contracts';
 import { hexToP2OP } from '../utils/addressUtils';
 import {
@@ -21,7 +18,6 @@ import {
   fetchBasketName,
   fetchBasketNAV,
   fetchComponent,
-  fetchBalanceOf,
   fetchMotoBalance,
   fetchInvestorPosition,
 } from '../utils/rawRpc';
@@ -106,9 +102,6 @@ export function parseMotoInput(input: string): bigint {
 // Hook
 // ---------------------------------------------------------------------------
 
-/** Whether the contract's base token is already MOTO (true on mainnet). */
-const BASE_IS_MOTO = INDEX_BASE_TOKEN.toLowerCase() === MOTO_TOKEN_ADDRESS.toLowerCase();
-
 export function useBasketDetail(basketId: bigint) {
   const { provider, network } = useProvider();
   const wallet = useWallet();
@@ -136,24 +129,6 @@ export function useBasketDetail(basketId: bigint) {
     if (!INDEX_BASE_TOKEN) return null;
     try {
       return getContract(hexToP2OP(INDEX_BASE_TOKEN), MotoTokenAbi, provider, network, senderAddr);
-    } catch { return null; }
-  }, [provider, network, senderAddr]);
-
-  // MOTO token contract (for MOTO approval when base != MOTO)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const motoTokenContract = useMemo((): any => {
-    if (BASE_IS_MOTO || !MOTO_TOKEN_ADDRESS) return null;
-    try {
-      return getContract(hexToP2OP(MOTO_TOKEN_ADDRESS), MotoTokenAbi, provider, network, senderAddr);
-    } catch { return null; }
-  }, [provider, network, senderAddr]);
-
-  // MotoSwap Router (for MOTO→BASKET swap when base != MOTO)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const routerContract = useMemo((): any => {
-    if (BASE_IS_MOTO || !MOTOSWAP_ROUTER_ADDRESS) return null;
-    try {
-      return getContract(hexToP2OP(MOTOSWAP_ROUTER_ADDRESS), MOTOSWAP_ROUTER_ABI, provider, network, senderAddr);
     } catch { return null; }
   }, [provider, network, senderAddr]);
 
@@ -256,12 +231,11 @@ export function useBasketDetail(basketId: bigint) {
     network,
   }), [wallet, network]);
 
-  // --- Invest with MOTO ---
-  // If base token IS MOTO: approve MOTO → invest (2 steps)
-  // If base token is BASKET: approve MOTO on router → swap → approve BASKET → invest (4 steps)
+  // --- Invest with MOTO (TX chaining: approve + invest in one flow) ---
+  // Both TXs hit mempool simultaneously. Miner orders via UTXO dependency.
 
   const invest = useCallback(async (motoAmount: bigint): Promise<string | null> => {
-    if (!contract || !wallet.isConnected) {
+    if (!contract || !baseTokenContract || !wallet.isConnected) {
       setError('Wallet not connected');
       return null;
     }
@@ -270,88 +244,42 @@ export function useBasketDetail(basketId: bigint) {
     setError(null);
 
     try {
-      // Resolve contract addresses to Address objects (contract.address is a
-      // P2OP string — the ABI encoder needs an Address object with .equals).
       const expertIndexAddr = await contract.contractAddress;
 
-      if (BASE_IS_MOTO) {
-        // Direct path: MOTO is the base token
-        setLoadingStep('Step 1/2: Approving MOTO spend...');
-        if (!baseTokenContract) throw new Error('MOTO contract not ready');
-        const approve = await baseTokenContract.increaseAllowance(expertIndexAddr, motoAmount);
-        if (approve.revert) throw new Error(`Approval failed: ${approve.revert}`);
-        await approve.sendTransaction(txParams());
+      // TX 1: Approve MOTO spend on ExpertIndex contract
+      setLoadingStep('Step 1/2: Approving MOTO...');
+      const approve = await baseTokenContract.increaseAllowance(expertIndexAddr, motoAmount);
+      if (approve.revert) throw new Error(`Approval failed: ${approve.revert}`);
+      const approveReceipt = await approve.sendTransaction(txParams());
 
-        setLoadingStep('Step 2/2: Investing in index...');
-        // 5% slippage tolerance on shares received
-        const minShares = motoAmount * 95n / 100n;
-        const result = await contract.invest(basketId, motoAmount, minShares);
-        if (result.revert) throw new Error(`Invest failed: ${result.revert}`);
-        const receipt = await result.sendTransaction(txParams());
-        await fetchData();
-        return receipt.transactionId;
-      } else {
-        // Swap path: MOTO → BASKET → invest
-        if (!motoTokenContract || !routerContract || !baseTokenContract) {
-          throw new Error('Swap contracts not ready');
-        }
-
-        const routerAddr = await routerContract.contractAddress;
-
-        // Step 1: Approve MOTO on MotoSwap Router
-        setLoadingStep('Step 1/4: Approving MOTO on DEX...');
-        const approveRouter = await motoTokenContract.increaseAllowance(routerAddr, motoAmount);
-        if (approveRouter.revert) throw new Error(`MOTO approval failed: ${approveRouter.revert}`);
-        await approveRouter.sendTransaction(txParams());
-
-        // Step 2: Swap MOTO -> BASKET via MotoSwap
-        setLoadingStep('Step 2/4: Swapping MOTO to BASKET...');
-        const motoAddr = Address.fromString(MOTO_TOKEN_ADDRESS);
-        const basketAddr = Address.fromString(BASKET_TOKEN_ADDRESS);
-        const path = [motoAddr, basketAddr];
-        const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600);
-        const toAddr = senderAddr ?? wallet.senderAddressObj;
-        // 3% slippage tolerance on swap
-        const minSwapOut = motoAmount * 97n / 100n;
-        const swap = await routerContract.swapExactTokensForTokensSupportingFeeOnTransferTokens(
-          motoAmount, minSwapOut, path, toAddr, deadline,
-        );
-        if (swap.revert) throw new Error(`Swap failed: ${swap.revert}`);
-        await swap.sendTransaction(txParams());
-
-        // Step 3: Check received BASKET and approve on ExpertIndex
-        setLoadingStep('Step 3/4: Approving BASKET for investment...');
-        // Fetch updated BASKET balance
-        const newBasketBal = await fetchBalanceOf(BASKET_TOKEN_ADDRESS, wallet.senderAddress);
-        const approveInvest = await baseTokenContract.increaseAllowance(expertIndexAddr, newBasketBal);
-        if (approveInvest.revert) throw new Error(`BASKET approval failed: ${approveInvest.revert}`);
-        await approveInvest.sendTransaction(txParams());
-
-        // Step 4: Invest BASKET
-        setLoadingStep('Step 4/4: Investing in index...');
-        // 5% slippage tolerance on shares received
-        const minSharesSwap = newBasketBal * 95n / 100n;
-        const result = await contract.invest(basketId, newBasketBal, minSharesSwap);
-        if (result.revert) throw new Error(`Invest failed: ${result.revert}`);
-        const receipt = await result.sendTransaction(txParams());
-        await fetchData();
-        return receipt.transactionId;
-      }
+      // TX 2: Invest (chained — no block wait)
+      setLoadingStep('Step 2/2: Investing...');
+      // Forward state so simulation sees the allowance from TX 1
+      contract.setTransactionDetails({ inputs: [], outputs: [] });
+      const minShares = motoAmount * 95n / 100n;
+      const result = await contract.invest(basketId, motoAmount, minShares);
+      if (result.revert) throw new Error(`Invest failed: ${result.revert}`);
+      // Chain: TX 2 spends TX 1's outputs — forces miner ordering
+      const receipt = await result.sendTransaction({
+        ...txParams(),
+        utxos: approveReceipt.newUTXOs,
+      });
+      await fetchData();
+      return receipt.transactionId;
     } catch (err) {
       console.error('[invest]', err);
       const raw = (err as Error).message;
-      // Make common errors more readable
       if (raw.includes('Insufficient')) setError('Insufficient balance. Check your MOTO balance.');
       else if (raw.includes('allowance')) setError('Token approval failed. Please try again.');
-      else if (raw.includes('Swap failed')) setError('DEX swap failed. Pool may lack liquidity.');
       else if (raw.includes('revert') || raw.includes('Reverted')) setError(`Transaction reverted: ${raw.slice(0, 120)}`);
+      else if (raw.includes('buffer')) setError('Contract returned unexpected data. Try again.');
       else setError(raw.length > 150 ? raw.slice(0, 150) + '...' : raw);
       return null;
     } finally {
       setLoading(false);
       setLoadingStep('');
     }
-  }, [contract, baseTokenContract, motoTokenContract, routerContract, wallet, network, basketId, fetchData, txParams]);
+  }, [contract, baseTokenContract, wallet, network, basketId, fetchData, txParams]);
 
   // --- Withdraw (returns base token MOTO) ---
 

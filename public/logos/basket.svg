@@ -1,0 +1,37 @@
+<svg width="400" height="400" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="200" cy="200" r="200" fill="url(#basketGradient)"/>
+  
+  <!-- Gradient definition -->
+  <defs>
+    <linearGradient id="basketGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#F97316;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#EA580C;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Basket icon -->
+  <g transform="translate(200, 200)">
+    <!-- Handle -->
+    <path d="M -60 -40 Q -60 -80, 0 -80 Q 60 -80, 60 -40" 
+          stroke="white" 
+          stroke-width="12" 
+          fill="none" 
+          stroke-linecap="round"/>
+    
+    <!-- Basket body -->
+    <rect x="-80" y="-40" width="160" height="100" 
+          rx="8" 
+          fill="white"/>
+    
+    <!-- Basket weave lines -->
+    <line x1="-60" y1="-40" x2="-60" y2="60" stroke="#F97316" stroke-width="6"/>
+    <line x1="-20" y1="-40" x2="-20" y2="60" stroke="#F97316" stroke-width="6"/>
+    <line x1="20" y1="-40" x2="20" y2="60" stroke="#F97316" stroke-width="6"/>
+    <line x1="60" y1="-40" x2="60" y2="60" stroke="#F97316" stroke-width="6"/>
+    
+    <line x1="-80" y1="-20" x2="80" y2="-20" stroke="#F97316" stroke-width="6"/>
+    <line x1="-80" y1="10" x2="80" y2="10" stroke="#F97316" stroke-width="6"/>
+    <line x1="-80" y1="40" x2="80" y2="40" stroke="#F97316" stroke-width="6"/>
+  </g>
+</svg>

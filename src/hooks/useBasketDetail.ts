@@ -270,11 +270,15 @@ export function useBasketDetail(basketId: bigint) {
     setError(null);
 
     try {
+      // Resolve contract addresses to Address objects (contract.address is a
+      // P2OP string — the ABI encoder needs an Address object with .equals).
+      const expertIndexAddr = await contract.contractAddress;
+
       if (BASE_IS_MOTO) {
         // Direct path: MOTO is the base token
         setLoadingStep('Step 1/2: Approving MOTO spend...');
         if (!baseTokenContract) throw new Error('MOTO contract not ready');
-        const approve = await baseTokenContract.increaseAllowance(contract.address, motoAmount);
+        const approve = await baseTokenContract.increaseAllowance(expertIndexAddr, motoAmount);
         if (approve.revert) throw new Error(`Approval failed: ${approve.revert}`);
         await approve.sendTransaction(txParams());
 
@@ -292,9 +296,11 @@ export function useBasketDetail(basketId: bigint) {
           throw new Error('Swap contracts not ready');
         }
 
+        const routerAddr = await routerContract.contractAddress;
+
         // Step 1: Approve MOTO on MotoSwap Router
         setLoadingStep('Step 1/4: Approving MOTO on DEX...');
-        const approveRouter = await motoTokenContract.increaseAllowance(routerContract.address, motoAmount);
+        const approveRouter = await motoTokenContract.increaseAllowance(routerAddr, motoAmount);
         if (approveRouter.revert) throw new Error(`MOTO approval failed: ${approveRouter.revert}`);
         await approveRouter.sendTransaction(txParams());
 
@@ -317,7 +323,7 @@ export function useBasketDetail(basketId: bigint) {
         setLoadingStep('Step 3/4: Approving BASKET for investment...');
         // Fetch updated BASKET balance
         const newBasketBal = await fetchBalanceOf(BASKET_TOKEN_ADDRESS, wallet.senderAddress);
-        const approveInvest = await baseTokenContract.increaseAllowance(contract.address, newBasketBal);
+        const approveInvest = await baseTokenContract.increaseAllowance(expertIndexAddr, newBasketBal);
         if (approveInvest.revert) throw new Error(`BASKET approval failed: ${approveInvest.revert}`);
         await approveInvest.sendTransaction(txParams());
 

@@ -1,6 +1,7 @@
 import { HashRouter, Routes, Route } from 'react-router-dom';
 import { Component, type ReactNode, useMemo } from 'react';
 import { WalletConnectProvider, useWalletConnect } from '@btc-vision/walletconnect';
+import { Address } from '@btc-vision/transaction';
 import '../node_modules/@btc-vision/walletconnect/browser/walletconnect.css';
 import HomePage from './pages/HomePage';
 import IndexDetailPage from './pages/IndexDetailPage';
@@ -26,27 +27,46 @@ function WalletBridge({ children }: { children: ReactNode }) {
         (walletConnect?.hashedMLDSAKey && walletConnect?.publicKey),
     );
 
-    // walletConnect.address is already an Address object from the SDK.
-    // Keep it as-is for getContract() sender param.
-    // Derive a display string separately for the UI.
-    const addressObj = walletConnect?.address ?? undefined;
+    // Build the Address object for SDK calls from the two keys WalletConnect
+    // exposes. Address.fromString() requires BOTH params (hashedMLDSAKey,
+    // legacyPublicKey) to produce a full Address with .equals() and
+    // .originalPublicKey. Using walletConnect.address directly is unreliable
+    // because some versions return a string, not an Address object.
+    let senderAddressObj: Address | undefined;
+    if (walletConnect?.hashedMLDSAKey && walletConnect?.publicKey) {
+      try {
+        senderAddressObj = Address.fromString(
+          walletConnect.hashedMLDSAKey,
+          walletConnect.publicKey,
+        );
+      } catch {
+        // fallback: try the raw address if it's already an Address object
+        if (walletConnect?.address && typeof walletConnect.address !== 'string' && 'equals' in walletConnect.address) {
+          senderAddressObj = walletConnect.address;
+        }
+      }
+    }
+
+    // Display string for the UI
     let senderAddress: string | undefined;
-    if (addressObj) {
+    if (senderAddressObj) {
+      try {
+        senderAddress = senderAddressObj.toHex?.() ?? String(senderAddressObj);
+      } catch { /* ignore */ }
+    } else if (walletConnect?.address) {
       try {
         senderAddress =
-          typeof addressObj === 'string'
-            ? addressObj
-            : addressObj.toHex?.() ?? String(addressObj);
-      } catch {
-        // ignore
-      }
+          typeof walletConnect.address === 'string'
+            ? walletConnect.address
+            : walletConnect.address.toHex?.() ?? String(walletConnect.address);
+      } catch { /* ignore */ }
     }
 
     return {
       ...walletConnect,
       isConnected,
       senderAddress,         // string for display
-      senderAddressObj: addressObj, // Address object for SDK calls
+      senderAddressObj,      // Address object for SDK getContract() sender
       p2trAddress: walletConnect?.walletAddress ?? walletConnect?.p2trAddress ?? undefined,
       connect: walletConnect?.openConnectModal ?? (() => {}),
       disconnect: walletConnect?.disconnect ?? (() => {}),

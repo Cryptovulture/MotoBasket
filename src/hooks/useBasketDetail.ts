@@ -254,8 +254,10 @@ export function useBasketDetail(basketId: bigint) {
 
       // TX 2: Invest (chained — no block wait)
       setLoadingStep('Step 2/2: Investing...');
-      // Forward state so simulation sees the allowance from TX 1
-      contract.setTransactionDetails({ inputs: [], outputs: [] });
+      // Forward the allowance storage state so the invest simulation succeeds.
+      // Without this, the RPC simulates against confirmed state (zero allowance)
+      // and the contract's transferFrom fails with a short/malformed response.
+      contract.setAccessList(approve.accessList);
       const minShares = motoAmount * 95n / 100n;
       const result = await contract.invest(basketId, motoAmount, minShares);
       if (result.revert) throw new Error(`Invest failed: ${result.revert}`);

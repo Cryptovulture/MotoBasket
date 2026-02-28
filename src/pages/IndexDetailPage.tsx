@@ -74,7 +74,8 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
   const {
     info, name, nav, components, position, motoBalance,
     loading, loadingStep, initialLoading, error,
-    invest, withdraw, scheduleRebalance, executeRebalance, collectPerfFee,
+    invest, withdraw,
+    scheduleRebalance, executeRebalance, collectPerfFee,
   } = useBasketDetail(basketId);
 
   const [buyInput, setBuyInput] = useState('');
@@ -327,6 +328,7 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
                 <span className="text-white font-mono">{formatMoto(motoBalance)}</span>
               </div>
             </div>
+
             <div className="flex gap-2 mb-3">
               <div className="flex-1 relative">
                 <input
@@ -353,7 +355,7 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
                 disabled={loading || !buyInput}
                 className="px-6 py-3 bg-gradient-to-r from-bitcoin-500 to-bitcoin-600 hover:from-bitcoin-600 hover:to-bitcoin-700 text-white font-medium rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed min-w-[80px]"
               >
-                {loading ? (loadingStep || '...') : 'Buy'}
+                {loading ? (loadingStep || 'Processing...') : 'Buy'}
               </button>
             </div>
           </div>
@@ -393,7 +395,7 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
                 disabled={loading || !sellInput}
                 className="px-6 py-3 bg-dark-700 hover:bg-dark-600 text-red-400 border border-red-500/30 font-medium rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed min-w-[80px]"
               >
-                {loading ? (loadingStep || '...') : 'Sell'}
+                {loading ? 'Selling...' : 'Sell'}
               </button>
             </div>
           </div>

@@ -27,24 +27,35 @@ function WalletBridge({ children }: { children: ReactNode }) {
         (walletConnect?.hashedMLDSAKey && walletConnect?.publicKey),
     );
 
-    // Build the Address object for SDK calls from the two keys WalletConnect
-    // exposes. Address.fromString() requires BOTH params (hashedMLDSAKey,
-    // legacyPublicKey) to produce a full Address with .equals() and
-    // .originalPublicKey. Using walletConnect.address directly is unreliable
-    // because some versions return a string, not an Address object.
+    // Build sender Address ensuring the legacy (tweaked) public key is set.
+    // The SDK needs it for simulation: btc_call sends from.tweakedToHex() as
+    // the fromLegacy parameter. Without it, contracts revert with
+    // "Legacy public key not set".
     let senderAddressObj: Address | undefined;
-    if (walletConnect?.hashedMLDSAKey && walletConnect?.publicKey) {
+
+    // 1. Try walletConnect.address first (may or may not have legacy key)
+    if (walletConnect?.address && typeof walletConnect.address !== 'string' && 'equals' in walletConnect.address) {
+      senderAddressObj = walletConnect.address;
+    }
+
+    // 2. Verify the Address has the legacy key — if not, rebuild with publicKey
+    let hasLegacy = false;
+    if (senderAddressObj) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        hasLegacy = Boolean((senderAddressObj as any).tweakedToHex?.());
+      } catch {
+        hasLegacy = false;
+      }
+    }
+
+    if ((!senderAddressObj || !hasLegacy) && walletConnect?.hashedMLDSAKey && walletConnect?.publicKey) {
       try {
         senderAddressObj = Address.fromString(
           walletConnect.hashedMLDSAKey,
           walletConnect.publicKey,
         );
-      } catch {
-        // fallback: try the raw address if it's already an Address object
-        if (walletConnect?.address && typeof walletConnect.address !== 'string' && 'equals' in walletConnect.address) {
-          senderAddressObj = walletConnect.address;
-        }
-      }
+      } catch { /* ignore — senderAddressObj stays undefined */ }
     }
 
     // Display string for the UI

@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { getContract } from 'opnet';
+import { Address } from '@btc-vision/transaction';
 import { useProvider } from './useProvider';
 import { useWallet } from './useWallet';
 import { ExpertIndexAbi } from '../abi/ExpertIndexAbi';
@@ -20,6 +21,8 @@ import {
   fetchComponent,
   fetchMotoBalance,
   fetchInvestorPosition,
+  fetchAllowance,
+  simulateAndGetRevert,
 } from '../utils/rawRpc';
 import type { RawComponent } from '../utils/rawRpc';
 
@@ -141,6 +144,7 @@ export function useBasketDetail(basketId: bigint) {
   const [position, setPosition] = useState<InvestorPosition | null>(null);
   const [basketBalance, setBasketBalance] = useState(0n);
   const [motoBalance, setMotoBalance] = useState(0n);
+  const [motoAllowance, setMotoAllowance] = useState(0n);
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState('');
   const [initialLoading, setInitialLoading] = useState(true);
@@ -196,8 +200,12 @@ export function useBasketDetail(basketId: bigint) {
         }
 
         try {
-          const motoBal = await fetchMotoBalance(wallet.senderAddress);
+          const [motoBal, allowance] = await Promise.all([
+            fetchMotoBalance(wallet.senderAddress),
+            fetchAllowance(MOTO_TOKEN_ADDRESS, wallet.senderAddress, EXPERT_INDEX_ADDRESS),
+          ]);
           setMotoBalance(motoBal);
+          setMotoAllowance(allowance);
         } catch (err) {
           console.error('[fetchBalances]', err);
         }
@@ -231,8 +239,18 @@ export function useBasketDetail(basketId: bigint) {
     network,
   }), [wallet, network]);
 
-  // --- Invest with MOTO (TX chaining: approve + invest in one flow) ---
-  // Both TXs hit mempool simultaneously. Miner orders via UTXO dependency.
+  // ---------------------------------------------------------------------------
+  // invest() — TX-chained approve + invest in one click
+  //
+  // Follows the OPNet TX Chaining pattern:
+  //   1. Simulate increaseAllowance → send → capture newUTXOs + accessList
+  //   2. Forward accessList to ExpertIndex contract via setAccessList()
+  //   3. Simulate invest (now sees the pending allowance)
+  //   4. Send invest with utxos from step 1 (UTXO dependency chain)
+  //
+  // If the user already has sufficient on-chain allowance, skip straight to
+  // the invest simulation (single TX, no chaining needed).
+  // ---------------------------------------------------------------------------
 
   const invest = useCallback(async (motoAmount: bigint): Promise<string | null> => {
     if (!contract || !baseTokenContract || !wallet.isConnected) {
@@ -240,48 +258,106 @@ export function useBasketDetail(basketId: bigint) {
       return null;
     }
     setLoading(true);
-    setLoadingStep('Preparing transaction...');
     setError(null);
 
     try {
-      const expertIndexAddr = await contract.contractAddress;
+      const params = txParams();
+      const needsApprove = motoAllowance < motoAmount;
 
-      // TX 1: Approve MOTO spend on ExpertIndex contract
-      setLoadingStep('Step 1/2: Approving MOTO...');
-      const approve = await baseTokenContract.increaseAllowance(expertIndexAddr, motoAmount);
-      if (approve.revert) throw new Error(`Approval failed: ${approve.revert}`);
-      const approveReceipt = await approve.sendTransaction(txParams());
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let approveNewUTXOs: any[] | undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let approveAccessList: any;
 
-      // TX 2: Invest (chained — no block wait)
-      setLoadingStep('Step 2/2: Investing...');
-      // Forward the allowance storage state so the invest simulation succeeds.
-      // Without this, the RPC simulates against confirmed state (zero allowance)
-      // and the contract's transferFrom fails with a short/malformed response.
-      contract.setAccessList(approve.accessList);
-      const minShares = motoAmount * 95n / 100n;
-      const result = await contract.invest(basketId, motoAmount, minShares);
-      if (result.revert) throw new Error(`Invest failed: ${result.revert}`);
-      // Chain: TX 2 spends TX 1's outputs — forces miner ordering
-      const receipt = await result.sendTransaction({
-        ...txParams(),
-        utxos: approveReceipt.newUTXOs,
-      });
+      // ── STEP 1: Approve (if needed) ─────────────────────────────────
+      if (needsApprove) {
+        setLoadingStep('Approving MOTO...');
+        const expertIndexAddr = Address.fromString(EXPERT_INDEX_ADDRESS);
+        const approveAmount = motoAmount > 2n ** 128n - 1n ? motoAmount : 2n ** 128n - 1n;
+
+        const approveSim = await baseTokenContract.increaseAllowance(expertIndexAddr, approveAmount);
+        if (approveSim.revert) throw new Error(`Approval reverted: ${approveSim.revert}`);
+
+        const approveReceipt = await approveSim.sendTransaction(params);
+        approveNewUTXOs = approveReceipt.newUTXOs;
+        approveAccessList = approveSim.accessList;
+      }
+
+      // ── STEP 2: Pre-flight raw RPC simulation ───────────────────────
+      // The SDK throws a buffer error instead of surfacing the revert when
+      // WASM aborts (env_exit → 1-byte result). Use raw RPC to check first
+      // and get the actual revert message if the invest would fail.
+      setLoadingStep('Simulating invest...');
+
+      const senderHex = wallet.senderAddress;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const senderLegacy = (() => { try { return (senderAddr as any)?.tweakedToHex?.(); } catch { return undefined; } })();
+
+      const encU256 = (v: bigint) => v.toString(16).padStart(64, '0');
+      // invest(uint256,uint256,uint256) — SHA256 selector
+      const investCalldata = 'a478629a' + encU256(basketId) + encU256(motoAmount) + encU256(0n);
+
+      const revertMsg = await simulateAndGetRevert(
+        EXPERT_INDEX_ADDRESS,
+        investCalldata,
+        senderHex,
+        senderLegacy,
+        needsApprove ? {
+          simulatedTransaction: { inputs: [], outputs: [] },
+          accessList: approveAccessList,
+        } : undefined,
+      );
+
+      if (revertMsg) {
+        // Surface the actual revert reason instead of a cryptic buffer error
+        setError(`Contract reverted: ${revertMsg.slice(0, 250)}`);
+        return null;
+      }
+
+      // ── STEP 3: SDK simulation + send ───────────────────────────────
+      setLoadingStep('Investing...');
+
+      // Forward approve state to SDK simulation
+      if (needsApprove) {
+        if (approveAccessList) contract.setAccessList(approveAccessList);
+        contract.setTransactionDetails({ inputs: [], outputs: [] });
+      }
+
+      const minShares = 0n;
+      const investSim = await contract.invest(basketId, motoAmount, minShares);
+      if (investSim.revert) throw new Error(`Invest reverted: ${investSim.revert}`);
+
+      // Chain UTXOs from approve TX if we did one
+      const investParams = { ...params };
+      if (approveNewUTXOs) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (investParams as any).utxos = approveNewUTXOs;
+      }
+
+      const investReceipt = await investSim.sendTransaction(investParams);
       await fetchData();
-      return receipt.transactionId;
+      return investReceipt.transactionId;
     } catch (err) {
-      console.error('[invest]', err);
+      console.error('[invest] ERROR:', err);
       const raw = (err as Error).message;
-      if (raw.includes('Insufficient')) setError('Insufficient balance. Check your MOTO balance.');
-      else if (raw.includes('allowance')) setError('Token approval failed. Please try again.');
-      else if (raw.includes('revert') || raw.includes('Reverted')) setError(`Transaction reverted: ${raw.slice(0, 120)}`);
-      else if (raw.includes('buffer')) setError('Contract returned unexpected data. Try again.');
-      else setError(raw.length > 150 ? raw.slice(0, 150) + '...' : raw);
+      if (raw.includes('buffer') || raw.includes('beyond')) {
+        // SDK threw buffer error despite pre-flight — extract what we can
+        setError('Transaction failed. The contract reverted but the error details could not be decoded.');
+      } else if (raw.includes('Insufficient') || raw.includes('allowance')) {
+        setError('Insufficient MOTO balance or allowance issue.');
+      } else if (raw.includes('Legacy public key')) {
+        setError('Wallet missing legacy public key. Disconnect and reconnect.');
+      } else if (raw.includes('revert') || raw.includes('Reverted') || raw.includes('calling function')) {
+        setError(`Transaction reverted: ${raw.slice(0, 200)}`);
+      } else {
+        setError(raw.length > 200 ? raw.slice(0, 200) + '...' : raw);
+      }
       return null;
     } finally {
       setLoading(false);
       setLoadingStep('');
     }
-  }, [contract, baseTokenContract, wallet, network, basketId, fetchData, txParams]);
+  }, [contract, baseTokenContract, wallet, senderAddr, network, basketId, motoAllowance, fetchData, txParams]);
 
   // --- Withdraw (returns base token MOTO) ---
 
@@ -370,8 +446,10 @@ export function useBasketDetail(basketId: bigint) {
 
   return {
     info, name, nav, components, position, basketBalance, motoBalance,
+    motoAllowance,
     loading, loadingStep, initialLoading, error,
-    invest, withdraw, scheduleRebalance, executeRebalance, collectPerfFee, returnCreatorLock,
+    invest, withdraw,
+    scheduleRebalance, executeRebalance, collectPerfFee, returnCreatorLock,
     refresh: fetchData,
   };
 }

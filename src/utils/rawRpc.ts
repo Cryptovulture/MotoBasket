@@ -18,9 +18,10 @@ const SEL = {
   getInvestorPosition: 'b3c9bc4c',
 } as const;
 
-// OP20 selectors (lowercase types: SHA256("balanceOf(address)")[:4])
+// OP20 selectors (lowercase types: SHA256("methodName(type,...)")[:4])
 const OP20_SEL = {
   balanceOf: '5b46f8f6',
+  allowance: 'd864b7ca', // SHA256("allowance(address,address)")[:4]
 } as const;
 
 /** Encode a bigint as a 32-byte big-endian hex string */
@@ -229,6 +230,19 @@ export async function fetchMotoBalance(ownerAddress: string): Promise<bigint> {
   return fetchBalanceOf(MOTO_TOKEN_ADDRESS, ownerAddress);
 }
 
+/** Fetch OP20 allowance: how much `spender` can spend of `owner`'s tokens */
+export async function fetchAllowance(tokenAddress: string, ownerAddress: string, spenderAddress: string): Promise<bigint> {
+  try {
+    const buf = await contractCall(
+      OP20_SEL.allowance + encodeAddressParam(ownerAddress) + encodeAddressParam(spenderAddress),
+      tokenAddress,
+    );
+    return safeReadU256(buf, 0);
+  } catch {
+    return 0n;
+  }
+}
+
 /** Fetch investor position for a basket */
 export async function fetchInvestorPosition(basketId: bigint, investorAddress: string): Promise<RawInvestorPosition> {
   try {
@@ -241,6 +255,57 @@ export async function fetchInvestorPosition(basketId: bigint, investorAddress: s
     };
   } catch {
     return { shares: 0n, costBasis: 0n };
+  }
+}
+
+/**
+ * Run a raw contract simulation and return the decoded revert message if any.
+ * Returns null if the simulation succeeded (no revert).
+ * This bypasses the opnet SDK's response parsing, which can throw buffer errors
+ * instead of surfacing the actual revert reason.
+ *
+ * btc_call params: [contractAddress, calldata, from, fromLegacy, height, simulatedTransaction, accessList]
+ */
+export async function simulateAndGetRevert(
+  contractAddress: string,
+  calldata: string,
+  from?: string,
+  fromLegacy?: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  opts?: { simulatedTransaction?: any; accessList?: any },
+): Promise<string | null> {
+  try {
+    const params: unknown[] = [contractAddress, calldata];
+    params.push(from ?? undefined);       // from
+    params.push(fromLegacy ?? undefined);  // fromLegacy
+    params.push(undefined);               // height
+    params.push(opts?.simulatedTransaction ?? undefined);  // simulatedTransaction
+    params.push(opts?.accessList ?? undefined);            // accessList
+
+    const result = await rpcCall('btc_call', params) as {
+      result?: string;
+      revert?: string;
+      error?: { message: string };
+    };
+    if (result.error) return result.error.message;
+    if (result.revert) {
+      try {
+        const binary = atob(result.revert);
+        const buf = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) buf[i] = binary.charCodeAt(i);
+        // OPNet revert format: 4-byte selector + 4-byte padding + UTF-8 message
+        if (buf.length > 8) {
+          const msgBytes = buf.slice(8);
+          return new TextDecoder().decode(msgBytes);
+        }
+        return `Revert: ${result.revert}`;
+      } catch {
+        return `Revert: ${result.revert}`;
+      }
+    }
+    return null; // success
+  } catch (err) {
+    return (err as Error).message;
   }
 }
 

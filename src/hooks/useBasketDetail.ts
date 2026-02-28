@@ -12,6 +12,7 @@ import {
   MOTO_DECIMALS,
   INDEX_BASE_TOKEN,
   INDEX_BASE_DECIMALS,
+  TOKEN_META,
 } from '../config/contracts';
 import { hexToP2OP } from '../utils/addressUtils';
 import {
@@ -23,6 +24,7 @@ import {
   fetchInvestorPosition,
   fetchAllowance,
   simulateAndGetRevert,
+  checkMissingPools,
 } from '../utils/rawRpc';
 import type { RawComponent } from '../utils/rawRpc';
 
@@ -277,6 +279,20 @@ export function useBasketDetail(basketId: bigint) {
         return null;
       }
 
+      // Pre-flight: check all component tokens have LP pools on MotoSwap
+      // Run this BEFORE approval so we don't waste a TX if pools are missing
+      setLoadingStep('Checking liquidity pools...');
+      const tokenAddresses = components.map(c => c.token);
+      const missingPools = await checkMissingPools(tokenAddresses);
+      if (missingPools.length > 0) {
+        const tokenNames = missingPools.map(addr => {
+          const meta = TOKEN_META[addr.toLowerCase()] || TOKEN_META[addr];
+          return meta ? meta.symbol : addr.slice(0, 10) + '...';
+        });
+        setError(`Cannot invest: no MotoSwap LP pool for ${tokenNames.join(', ')}. Pools must be created first.`);
+        return null;
+      }
+
       const params = txParams();
 
       // Fresh allowance check (don't rely on cached state — previous approval may have confirmed)
@@ -319,6 +335,7 @@ export function useBasketDetail(basketId: bigint) {
       }
 
       // ── STEP 2: Invest (allowance is now confirmed on-chain) ─────────
+
       setLoadingStep('Simulating invest...');
       const minShares = 0n;
       const investSim = await contract.invest(basketId, motoAmount, minShares);
@@ -370,7 +387,7 @@ export function useBasketDetail(basketId: bigint) {
       setLoading(false);
       setLoadingStep('');
     }
-  }, [contract, baseTokenContract, wallet, senderAddr, network, basketId, motoBalance, fetchData, txParams]);
+  }, [contract, baseTokenContract, wallet, senderAddr, network, basketId, motoBalance, components, fetchData, txParams]);
 
   // --- Withdraw (returns base token MOTO) ---
 

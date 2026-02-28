@@ -3,7 +3,7 @@
  * directly via fetch(). This avoids any browser-specific SDK issues.
  */
 
-import { RPC_URL, EXPERT_INDEX_ADDRESS, BASKET_TOKEN_ADDRESS, MOTO_TOKEN_ADDRESS } from '../config/contracts';
+import { RPC_URL, EXPERT_INDEX_ADDRESS, BASKET_TOKEN_ADDRESS, MOTO_TOKEN_ADDRESS, MOTOSWAP_ROUTER_ADDRESS } from '../config/contracts';
 
 const RPC_ENDPOINT = `${RPC_URL}/api/v1/json-rpc`;
 let rpcId = 0;
@@ -22,6 +22,11 @@ const SEL = {
 const OP20_SEL = {
   balanceOf: '5b46f8f6',
   allowance: 'd864b7ca', // SHA256("allowance(address,address)")[:4]
+} as const;
+
+// MotoSwap Router selectors
+const ROUTER_SEL = {
+  getAmountsOut: 'a8e365fa', // SHA256("getAmountsOut(uint256,address[])")[:4]
 } as const;
 
 /** Encode a bigint as a 32-byte big-endian hex string */
@@ -318,6 +323,38 @@ export async function simulateAndGetRevert(
   } catch (err) {
     return (err as Error).message;
   }
+}
+
+
+/**
+ * Check which component tokens have LP pools on MotoSwap.
+ * Calls Router.getAmountsOut(1 MOTO, [MOTO, TOKEN]) for each token.
+ * Returns the list of token addresses (canonical 0x hex) that do NOT have pools.
+ */
+export async function checkMissingPools(componentTokens: bigint[]): Promise<string[]> {
+  if (!MOTOSWAP_ROUTER_ADDRESS) return [];
+  const motoHex = MOTO_TOKEN_ADDRESS.replace(/^0x/, '').toLowerCase();
+  const testAmount = encodeU256(1000000000000000000n); // 1 MOTO (10^18)
+  const pathLen = encodeU256(2n);
+
+  const missing: string[] = [];
+  for (const tokenU256 of componentTokens) {
+    const tokenAddr = u256ToAddress(tokenU256);
+    const tokenHex = tokenAddr.replace(/^0x/, '').toLowerCase();
+    const calldata = ROUTER_SEL.getAmountsOut + testAmount + pathLen + motoHex + tokenHex;
+    try {
+      const result = await rpcCall('btc_call', [MOTOSWAP_ROUTER_ADDRESS, calldata]) as {
+        result?: string;
+        revert?: string;
+      };
+      if (result.revert) {
+        missing.push(tokenAddr);
+      }
+    } catch {
+      missing.push(tokenAddr);
+    }
+  }
+  return missing;
 }
 
 /** Fetch everything for all baskets */

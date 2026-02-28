@@ -303,6 +303,17 @@ export async function simulateAndGetRevert(
         return `Revert: ${result.revert}`;
       }
     }
+    // Detect env_exit aborts: WASM abort produces a tiny result (1-4 bytes)
+    // instead of a proper revert. A real function return (e.g. uint256) is ≥32 bytes.
+    if (result.result) {
+      try {
+        const binary = atob(result.result);
+        if (binary.length > 0 && binary.length < 8) {
+          const exitCode = binary.charCodeAt(0);
+          return `Contract aborted (exit code ${exitCode})`;
+        }
+      } catch { /* ignore decode errors */ }
+    }
     return null; // success
   } catch (err) {
     return (err as Error).message;

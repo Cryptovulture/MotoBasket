@@ -223,14 +223,12 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
         <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4 mb-6 flex justify-between items-center">
           <p className="text-green-400 text-sm font-mono">
             TX: {txId.slice(0, 16)}...
-            <a
-              href={`https://testnet.opnet.org/tx/${txId}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="ml-2 text-bitcoin-500 hover:text-bitcoin-400 underline"
+            <button
+              onClick={() => { navigator.clipboard.writeText(txId); }}
+              className="ml-2 text-bitcoin-500 hover:text-bitcoin-400 underline cursor-pointer bg-transparent border-none"
             >
-              View
-            </a>
+              Copy TX ID
+            </button>
           </p>
           <button onClick={() => setTxId(null)} className="text-dark-400 hover:text-white">&times;</button>
         </div>

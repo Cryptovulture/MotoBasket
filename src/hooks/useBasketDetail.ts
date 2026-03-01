@@ -280,7 +280,6 @@ export function useBasketDetail(basketId: bigint) {
       }
 
       // Pre-flight: check all component tokens have LP pools on MotoSwap
-      // Run this BEFORE approval so we don't waste a TX if pools are missing
       setLoadingStep('Checking liquidity pools...');
       const tokenAddresses = components.map(c => c.token);
       const missingPools = await checkMissingPools(tokenAddresses);
@@ -295,7 +294,7 @@ export function useBasketDetail(basketId: bigint) {
 
       const params = txParams();
 
-      // Fresh allowance check (don't rely on cached state — previous approval may have confirmed)
+      // Fresh allowance check
       setLoadingStep('Checking allowance...');
       const currentAllowance = await fetchAllowance(MOTO_TOKEN_ADDRESS, wallet.senderAddress!, EXPERT_INDEX_ADDRESS);
       const needsApprove = currentAllowance < motoAmount;
@@ -307,13 +306,13 @@ export function useBasketDetail(basketId: bigint) {
         const approveAmount = motoAmount > 2n ** 128n - 1n ? motoAmount : 2n ** 128n - 1n;
 
         const approveSim = await baseTokenContract.increaseAllowance(expertIndexAddr, approveAmount);
-        if (approveSim.revert) throw new Error(`Approval reverted: ${approveSim.revert}`);
+        if ('error' in approveSim) throw new Error(`Approval failed: ${approveSim.error}`);
 
         await approveSim.sendTransaction(params);
 
-        // Poll until the approval confirms on-chain (blocks mine every ~30s)
+        // Poll until the approval confirms on-chain
         setLoadingStep('Waiting for approval to confirm...');
-        const maxAttempts = 30; // 30 × 5s = 2.5 min timeout
+        const maxAttempts = 30;
         let confirmed = false;
         for (let i = 0; i < maxAttempts; i++) {
           await new Promise(resolve => setTimeout(resolve, 5000));
@@ -334,12 +333,33 @@ export function useBasketDetail(basketId: bigint) {
         }
       }
 
-      // ── STEP 2: Invest (allowance is now confirmed on-chain) ─────────
+      // ── STEP 2: Raw RPC pre-flight — catch reverts BEFORE SDK call ──
+      // The SDK has a bug: when the contract reverts, the RPC returns both
+      // `result` (1 byte) and `revert` (error msg). The SDK tries to decode
+      // `result` as UINT256 first → buffer error → masks the real revert.
+      // This pre-flight catches actual reverts with readable messages.
+      setLoadingStep('Pre-flight check...');
+      const encU256 = (v: bigint) => v.toString(16).padStart(64, '0');
+      const investCalldata = 'a478629a' + encU256(basketId) + encU256(motoAmount) + encU256(0n);
+      const senderHex = wallet.senderAddress;
+      // btc_call needs fromLegacy (tweaked public key) alongside from (ML-DSA hash)
+      const senderLegacy = wallet.publicKey ?? undefined;
+      const revertMsg = await simulateAndGetRevert(
+        EXPERT_INDEX_ADDRESS,
+        investCalldata,
+        senderHex,
+        senderLegacy,
+      );
+      if (revertMsg) {
+        setError(`Contract reverted: ${revertMsg.slice(0, 250)}`);
+        return null;
+      }
 
+      // ── STEP 3: SDK simulate + send ─────────────────────────────────
       setLoadingStep('Simulating invest...');
       const minShares = 0n;
       const investSim = await contract.invest(basketId, motoAmount, minShares);
-      if (investSim.revert) throw new Error(`Invest reverted: ${investSim.revert}`);
+      if ('error' in investSim) throw new Error(`Invest failed: ${investSim.error}`);
 
       setLoadingStep('Investing...');
       const investReceipt = await investSim.sendTransaction(params);
@@ -348,36 +368,11 @@ export function useBasketDetail(basketId: bigint) {
     } catch (err) {
       console.error('[invest] ERROR:', err);
       const raw = (err as Error).message;
-      if (raw.includes('buffer') || raw.includes('beyond')) {
-        // SDK can't decode revert. Use raw RPC diagnostic to get the actual reason.
-        try {
-          const encU256 = (v: bigint) => v.toString(16).padStart(64, '0');
-          const investCalldata = 'a478629a' + encU256(basketId) + encU256(motoAmount) + encU256(0n);
-          const senderHex = wallet.senderAddress;
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const senderLegacy = (() => { try { return (senderAddr as any)?.tweakedToHex?.(); } catch { return undefined; } })();
-
-          const revertMsg = await simulateAndGetRevert(
-            EXPERT_INDEX_ADDRESS,
-            investCalldata,
-            senderHex,
-            senderLegacy,
-          );
-
-          if (revertMsg) {
-            setError(`Contract reverted: ${revertMsg.slice(0, 250)}`);
-          } else {
-            setError('Invest simulation failed — the contract may have aborted. Check browser console for details.');
-          }
-        } catch (diagErr) {
-          console.error('[invest] diagnostic fallback failed:', diagErr);
-          setError('Transaction failed. The contract reverted but the error details could not be decoded.');
-        }
-      } else if (raw.includes('Insufficient') || raw.includes('allowance')) {
+      if (raw.includes('Insufficient') || raw.includes('allowance')) {
         setError('Insufficient MOTO balance or allowance issue.');
       } else if (raw.includes('Legacy public key')) {
         setError('Wallet missing legacy public key. Disconnect and reconnect.');
-      } else if (raw.includes('revert') || raw.includes('Reverted') || raw.includes('calling function')) {
+      } else if (raw.includes('revert') || raw.includes('Reverted')) {
         setError(`Transaction reverted: ${raw.slice(0, 200)}`);
       } else {
         setError(raw.length > 200 ? raw.slice(0, 200) + '...' : raw);
@@ -387,7 +382,7 @@ export function useBasketDetail(basketId: bigint) {
       setLoading(false);
       setLoadingStep('');
     }
-  }, [contract, baseTokenContract, wallet, senderAddr, network, basketId, motoBalance, components, fetchData, txParams]);
+  }, [contract, baseTokenContract, wallet, network, basketId, motoBalance, components, fetchData, txParams]);
 
   // --- Withdraw (returns base token MOTO) ---
 

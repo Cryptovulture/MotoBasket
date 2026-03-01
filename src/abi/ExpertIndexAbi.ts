@@ -92,7 +92,7 @@ export const ExpertIndexAbi: BitcoinInterfaceAbi = [
       { name: 'motoAmount', type: ABIDataTypes.UINT256 },
       { name: 'minSharesOut', type: ABIDataTypes.UINT256 },
     ],
-    outputs: [{ name: 'shares', type: ABIDataTypes.UINT256 }],
+    outputs: [],
     type: BitcoinAbiTypes.Function,
   },
   {
@@ -102,7 +102,7 @@ export const ExpertIndexAbi: BitcoinInterfaceAbi = [
       { name: 'shareAmount', type: ABIDataTypes.UINT256 },
       { name: 'minMotoOut', type: ABIDataTypes.UINT256 },
     ],
-    outputs: [{ name: 'motoOut', type: ABIDataTypes.UINT256 }],
+    outputs: [],
     type: BitcoinAbiTypes.Function,
   },
   {

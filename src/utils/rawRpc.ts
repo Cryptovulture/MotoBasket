@@ -308,23 +308,22 @@ export async function simulateAndGetRevert(
         return `Revert: ${result.revert}`;
       }
     }
-    // Detect env_exit aborts: WASM abort produces a tiny result (1-4 bytes)
-    // instead of a proper revert. A real function return (e.g. uint256) is ≥32 bytes.
-    if (result.result) {
-      try {
-        const binary = atob(result.result);
-        if (binary.length > 0 && binary.length < 8) {
-          const exitCode = binary.charCodeAt(0);
-          return `Contract aborted (exit code ${exitCode})`;
-        }
-      } catch { /* ignore decode errors */ }
-    }
-    return null; // success
+    // No revert — simulation succeeded (result may be small or empty, that's OK)
+    return null;
   } catch (err) {
     return (err as Error).message;
   }
 }
 
+
+/**
+ * Encode a u16 value as a 2-byte big-endian hex string.
+ * OPNet's binary encoding uses u16 BE for array lengths in calldata.
+ */
+function encodeU16BE(val: number): string {
+  return ((val >> 8) & 0xFF).toString(16).padStart(2, '0') +
+    (val & 0xFF).toString(16).padStart(2, '0');
+}
 
 /**
  * Check which component tokens have LP pools on MotoSwap.
@@ -335,7 +334,8 @@ export async function checkMissingPools(componentTokens: bigint[]): Promise<stri
   if (!MOTOSWAP_ROUTER_ADDRESS) return [];
   const motoHex = MOTO_TOKEN_ADDRESS.replace(/^0x/, '').toLowerCase();
   const testAmount = encodeU256(1000000000000000000n); // 1 MOTO (10^18)
-  const pathLen = encodeU256(2n);
+  // Array length is u16 BE (2 bytes), NOT u256 (32 bytes)
+  const pathLen = encodeU16BE(2);
 
   const missing: string[] = [];
   for (const tokenU256 of componentTokens) {

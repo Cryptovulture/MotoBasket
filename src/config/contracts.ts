@@ -12,7 +12,7 @@ export const RPC_URL = 'https://testnet.opnet.org';
 // ============================================================================
 
 // Core protocol contracts
-export const EXPERT_INDEX_ADDRESS = '0xdcbb2487c8da960a56b5b2c461024fa3b67f1337b51cb4acb1a3422dd2d6d770';
+export const EXPERT_INDEX_ADDRESS = '0xd66e95bbf08d4ec09983cac57cd6d6d85967cb5a134008e51fdb74b0f70f1364';
 export const BATCH_ROUTER_ADDRESS = '0x00776fb7580f41ec6d53da28480500384e7ad28dd164c938d4aa0695bd47f188';
 
 // MOTO token — base currency for investments
@@ -30,6 +30,9 @@ export const MOTO_DECIMALS = 18;
 
 export const INDEX_BASE_TOKEN = MOTO_TOKEN_ADDRESS;
 export const INDEX_BASE_DECIMALS = MOTO_DECIMALS;
+
+// OPNet block explorer
+export const EXPLORER_TX_URL = 'https://mempool.opnet.org/tx/';
 
 // App configuration
 export const CONFIG = {
@@ -60,6 +63,11 @@ export const TOKEN_META: Record<string, { symbol: string; name: string; decimals
   '0x24550d41f446261c3091fb2dad64a62f9065398650e238e2338a22b3bd7a2e22': { symbol: 'DGEN', name: 'Degen Coin', decimals: 18 },
   '0x07ec6eb7dd1c071053d390053ea60dfad0a39dc86f84bbd5ba95d7d858789258': { symbol: 'BONQ', name: 'Bonk L1', decimals: 18 },
   '0x274cca66f076864b97a29e1001275c69d48eaad9c4eda460f58914e005f8f383': { symbol: 'SHBA', name: 'Shiba Bitcoin', decimals: 18 },
+  // Infrastructure tokens
+  '0xceca13106b88822d06f8ff1fea5fbe15a60d361ba494170efb3c7d6025bd209d': { symbol: 'WBTC', name: 'Wrapped BTC', decimals: 18 },
+  '0xc341404b364262579db4b31276a94f76190b3c24847f1aa5744e593f6c2f6018': { symbol: 'STSH', name: 'Stash Token', decimals: 18 },
+  '0x4332dafd738b89df51e0c75fb8a1d303e6b542b76f014b2daa4f93d5aabc6d53': { symbol: 'PILL', name: 'PillCoin', decimals: 18 },
+  '0xe7817ac350ece2b586869aced8b3cb70b1a1108fd6798d44fc629bbff355b514': { symbol: 'STR8', name: 'Str8 Token', decimals: 18 },
   // DeFi tokens
   '0xb3640fd16d44469af46ec74097917d3cf16feb28715b8cd8304ce09245d66c18': { symbol: 'LNDB', name: 'LendBTC', decimals: 18 },
   '0x7cadb62baf8d683e04adb3830ae2d273ebe2748df1b68a7d7320d6110050111b': { symbol: 'YLDP', name: 'Yield Protocol', decimals: 18 },
@@ -72,56 +80,52 @@ export const TOKEN_META: Record<string, { symbol: string; name: string; decimals
 };
 
 // Display names for on-chain baskets (basketId -> friendly name)
+// Verified against on-chain ExpertIndex v2 contract 2026-03-01
 export const BASKET_DISPLAY_NAMES: Record<string, string> = {
-  '1': 'NEBL-CPHR-VRTX Index',
-  '2': 'CPHR-VRTX 50/50',
-  '3': 'Artificial Intelligence Index',
-  '4': 'Meme Token Index',
-  '5': 'Bitcoin DeFi Index',
-  '6': 'Fresh Produce Index',
-  '7': 'Blue Chip Index',
-  '8': "Danny's Alpha Picks",
-  '9': "Chad's BTC Maxi Basket",
-  '10': "Vulture's Degen Plays",
-  '11': "Ansem's Smart Money",
-  '12': "GCR's Contrarian Basket",
+  '1': 'Meme Token Index',
+  '2': 'NEBL-CPHR-VRTX Index',
+  '3': 'Bitcoin DeFi Index',
+  '4': 'CPHR-VRTX 50/50',
+  '5': "Chad's BTC Maxi Basket",
+  '6': "Danny's Alpha Picks",
+  '7': 'Meme Token Index',
+  '8': 'Bitcoin DeFi Index',
+  '9': "Danny's Alpha Picks",
+  '10': "Chad's BTC Maxi Basket",
+  '11': 'Artificial Intelligence Index',
+  '12': 'Meme Token Index',
 };
 
 // Expert metadata for baskets managed by KOLs
+// Mapped to correct on-chain basket IDs (verified 2026-03-01, ExpertIndex v2)
 export const EXPERT_BASKETS: Record<string, {
   creator: string;
   avatar: string;
   description: string;
   isExpert: boolean;
 }> = {
-  '8': {
+  '5': {
+    creator: '@chad_btc',
+    avatar: '/kol-avatars/chad.png',
+    description: 'Bitcoin maximalist plays — blue chips and DeFi infrastructure',
+    isExpert: true,
+  },
+  '6': {
     creator: '@danny_btc',
     avatar: '/kol-avatars/danny.png',
     description: 'High-conviction AI and DeFi plays from a top Bitcoin trader',
     isExpert: true,
   },
   '9': {
-    creator: '@chad_btc',
-    avatar: '/kol-avatars/chad.png',
-    description: 'Bitcoin maximalist plays — blue chips and DeFi infrastructure',
+    creator: '@danny_btc',
+    avatar: '/kol-avatars/danny.png',
+    description: 'High-conviction AI and DeFi plays from a top Bitcoin trader',
     isExpert: true,
   },
   '10': {
-    creator: '@crypto_vulture',
-    avatar: '/kol-avatars/vulture.png',
-    description: 'High risk, high reward — memes and micro-caps on Bitcoin L1',
-    isExpert: true,
-  },
-  '11': {
-    creator: '@anslorian',
-    avatar: '/kol-avatars/ansem.png',
-    description: 'Institutional-grade allocations across AI and blue chips',
-    isExpert: true,
-  },
-  '12': {
-    creator: '@gaygcr',
-    avatar: '/kol-avatars/gaygcr.png',
-    description: 'Contrarian bets — overlooked food tokens and undervalued AI plays',
+    creator: '@chad_btc',
+    avatar: '/kol-avatars/chad.png',
+    description: 'Bitcoin maximalist plays — blue chips and DeFi infrastructure',
     isExpert: true,
   },
 };

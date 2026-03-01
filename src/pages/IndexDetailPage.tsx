@@ -10,8 +10,17 @@ import {
   parseBasketInput,
 } from '../hooks/useBasketDetail';
 import { useWallet } from '../hooks/useWallet';
-import { TOKEN_META, BASKET_DISPLAY_NAMES, EXPERT_BASKETS } from '../config/contracts';
+import { TOKEN_META, BASKET_DISPLAY_NAMES, EXPERT_BASKETS, EXPLORER_TX_URL } from '../config/contracts';
 import { u256ToAddress, fetchTransactionReceipt } from '../utils/rawRpc';
+import {
+  type TrackedTx,
+  type TxStatus,
+  loadTxHistory,
+  saveTxHistory,
+  statusBadge,
+  txTypeLabel,
+  timeAgo,
+} from '../utils/txHistory';
 
 const TOKEN_COLORS: Record<string, string> = {
   MOTO: 'from-green-500 to-emerald-500',
@@ -35,39 +44,6 @@ const TOKEN_COLORS: Record<string, string> = {
   BERY: 'from-purple-500 to-pink-500',
 };
 
-// ── TX History Types ─────────────────────────────────────────────────
-
-type TxStatus = 'pending' | 'confirmed' | 'reverted';
-
-interface TrackedTx {
-  txId: string;
-  type: 'invest' | 'withdraw' | 'rebalance' | 'fee';
-  amount: string;
-  timestamp: number;
-  status: TxStatus;
-}
-
-function lsKey(basketId: bigint): string {
-  return `motobasket_txhist_${basketId}`;
-}
-
-function loadTxHistory(basketId: bigint): TrackedTx[] {
-  try {
-    const raw = localStorage.getItem(lsKey(basketId));
-    if (!raw) return [];
-    return JSON.parse(raw) as TrackedTx[];
-  } catch {
-    return [];
-  }
-}
-
-function saveTxHistory(basketId: bigint, txs: TrackedTx[]) {
-  try {
-    // Keep last 20
-    localStorage.setItem(lsKey(basketId), JSON.stringify(txs.slice(0, 20)));
-  } catch { /* quota exceeded — ignore */ }
-}
-
 // ── Helpers ──────────────────────────────────────────────────────────
 
 function formatNAV(value: bigint): string {
@@ -76,41 +52,6 @@ function formatNAV(value: bigint): string {
   if (num >= 1_000) return `$${(num / 1_000).toFixed(1)}K`;
   if (num > 0) return num.toFixed(4);
   return '--';
-}
-
-function statusBadge(status: TxStatus) {
-  switch (status) {
-    case 'pending':
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
-          <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
-          Pending
-        </span>
-      );
-    case 'confirmed':
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-green-500/10 text-green-400 border border-green-500/20">
-          <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
-          Confirmed
-        </span>
-      );
-    case 'reverted':
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/20">
-          <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
-          Reverted
-        </span>
-      );
-  }
-}
-
-function txTypeLabel(type: TrackedTx['type']) {
-  switch (type) {
-    case 'invest': return 'Buy';
-    case 'withdraw': return 'Sell';
-    case 'rebalance': return 'Rebalance';
-    case 'fee': return 'Fee';
-  }
 }
 
 // ── Banner colors based on latest TX status ──────────────────────────
@@ -209,8 +150,10 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
         const idx = updated.findIndex(t => t.txId === tx.txId);
         if (idx === -1) continue;
 
-        const newStatus: TxStatus = receipt.events.length > 0 ? 'confirmed' : 'reverted';
-        updated[idx] = { ...updated[idx], status: newStatus };
+        const isConfirmed = receipt.events.length > 0;
+        const revertReason = !isConfirmed && receipt.revert ? receipt.revert : undefined;
+        const newStatus: TxStatus = isConfirmed ? 'confirmed' : 'reverted';
+        updated[idx] = { ...updated[idx], status: newStatus, revertReason };
         changed = true;
 
         // Update the banner if this is the latest TX
@@ -264,9 +207,11 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
       try {
         const receipt = await fetchTransactionReceipt(txId);
         if (receipt) {
-          const newStatus: TxStatus = receipt.events.length > 0 ? 'confirmed' : 'reverted';
-          setLatestTx(prev => prev?.txId === txId ? { ...prev, status: newStatus } : prev);
-          setTxHistory(prev => prev.map(t => t.txId === txId ? { ...t, status: newStatus } : t));
+          const isConfirmed = receipt.events.length > 0;
+          const revertReason = !isConfirmed && receipt.revert ? receipt.revert : undefined;
+          const newStatus: TxStatus = isConfirmed ? 'confirmed' : 'reverted';
+          setLatestTx(prev => prev?.txId === txId ? { ...prev, status: newStatus, revertReason } : prev);
+          setTxHistory(prev => prev.map(t => t.txId === txId ? { ...t, status: newStatus, revertReason } : t));
         }
       } catch { /* will be caught by interval */ }
     }, 5_000);
@@ -429,7 +374,15 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
               </svg>
             )}
             <p className={`${bannerTextClass(latestTx.status)} text-sm font-mono`}>
-              {bannerLabel(latestTx.status)}: {latestTx.txId.slice(0, 16)}...
+              {bannerLabel(latestTx.status)}:{' '}
+              <a
+                href={EXPLORER_TX_URL + latestTx.txId}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-bitcoin-500 underline transition-colors"
+              >
+                {latestTx.txId.slice(0, 16)}...
+              </a>
               <button
                 type="button"
                 onClick={(e) => handleCopy(e, latestTx.txId)}
@@ -438,6 +391,9 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
                 {copyFeedback ? 'Copied!' : 'Copy TX ID'}
               </button>
             </p>
+            {latestTx.status === 'reverted' && latestTx.revertReason && (
+              <p className="text-red-400/80 text-xs mt-1">{latestTx.revertReason}</p>
+            )}
           </div>
           <button type="button" onClick={() => setLatestTx(null)} className="text-dark-400 hover:text-white text-lg leading-none">&times;</button>
         </div>
@@ -655,8 +611,23 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
                   <span className="text-dark-300 text-sm font-mono">{tx.amount}</span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-dark-500 text-xs font-mono">{tx.txId.slice(0, 12)}...</span>
-                  {statusBadge(tx.status)}
+                  <a
+                    href={EXPLORER_TX_URL + tx.txId}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-dark-500 text-xs font-mono hover:text-bitcoin-500 transition-colors"
+                  >
+                    {tx.txId.slice(0, 12)}...
+                  </a>
+                  {(() => { const b = statusBadge(tx.status); return (
+                    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium border ${b.className}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${b.dotClass}`} />
+                      {b.label}
+                    </span>
+                  ); })()}
+                  <span className="text-dark-400 text-xs whitespace-nowrap" title={new Date(tx.timestamp).toLocaleString()}>
+                    {timeAgo(tx.timestamp)}
+                  </span>
                   <span className="text-dark-600 text-xs">
                     {new Date(tx.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>

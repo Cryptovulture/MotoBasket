@@ -308,7 +308,19 @@ export async function simulateAndGetRevert(
         return `Revert: ${result.revert}`;
       }
     }
-    // No revert — simulation succeeded (result may be small or empty, that's OK)
+    // Detect VM crash (env_abort): result is 1-byte 0x00 with no revert message.
+    // A successful contract call returns at least 32 bytes (u256). A 1-byte 0x00
+    // with empty revert indicates the WASM runtime crashed (assertion/buffer error).
+    if (result.result) {
+      try {
+        const resBinary = atob(result.result);
+        if (resBinary.length <= 1) {
+          return 'Contract execution crashed (VM abort). The contract may need to be recompiled and redeployed with the latest runtime.';
+        }
+      } catch { /* ignore decode errors */ }
+    }
+
+    // No revert — simulation succeeded
     return null;
   } catch (err) {
     return (err as Error).message;

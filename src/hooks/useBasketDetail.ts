@@ -80,6 +80,14 @@ export function formatBaseToken(value: bigint): string {
   return formatToken(value, INDEX_BASE_DECIMALS);
 }
 
+/** Format MOTO for display — truncated to 4 decimal places */
+export function formatMotoDisplay(value: bigint): string {
+  const full = formatMoto(value);
+  const dot = full.indexOf('.');
+  if (dot === -1) return full;
+  return full.slice(0, dot + 5); // whole + '.' + 4 decimals
+}
+
 export function parseTokenInput(input: string, decimals: number): bigint {
   const cleaned = input.trim().replace(/[^0-9.]/g, '');
   if (!cleaned || cleaned === '.') return 0n;

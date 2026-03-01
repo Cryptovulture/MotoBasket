@@ -357,6 +357,55 @@ export async function checkMissingPools(componentTokens: bigint[]): Promise<stri
   return missing;
 }
 
+// ── Transaction Receipt ──────────────────────────────────────────────
+
+export interface TxReceipt {
+  hash: string;
+  gasUsed: bigint;
+  events: unknown[];
+  revert: string;
+}
+
+/**
+ * Fetch a transaction receipt by hash.
+ * Returns null if the TX hasn't been mined yet.
+ */
+export async function fetchTransactionReceipt(txHash: string): Promise<TxReceipt | null> {
+  try {
+    const result = await rpcCall('btc_getTransactionReceipt', [txHash]) as {
+      receipt?: {
+        gasUsed?: string;
+        events?: unknown[];
+        revert?: string;
+      } | null;
+      hash?: string;
+      gasUsed?: string;
+      events?: unknown[];
+      revert?: string;
+    } | null;
+
+    if (!result) return null;
+
+    // The RPC may return the receipt at the top level or nested
+    const receipt = result.receipt ?? result;
+    if (!receipt) return null;
+
+    const gasHex = (receipt as { gasUsed?: string }).gasUsed ?? '0';
+    const events = (receipt as { events?: unknown[] }).events ?? [];
+    const revert = (receipt as { revert?: string }).revert ?? '';
+
+    return {
+      hash: txHash,
+      gasUsed: BigInt(gasHex.startsWith('0x') ? gasHex : '0x' + gasHex),
+      events,
+      revert,
+    };
+  } catch {
+    // TX not found or RPC error — treat as not yet mined
+    return null;
+  }
+}
+
 /** Fetch everything for all baskets */
 export async function fetchAllBaskets(): Promise<{ stats: RawStats; baskets: RawBasket[] }> {
   const stats = await fetchStats();

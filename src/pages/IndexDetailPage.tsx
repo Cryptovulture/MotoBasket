@@ -1,16 +1,17 @@
 import { useParams, Link } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   useBasketDetail,
   formatBasket,
   formatMoto,
+  formatMotoDisplay,
   formatToken,
   parseMotoInput,
   parseBasketInput,
 } from '../hooks/useBasketDetail';
 import { useWallet } from '../hooks/useWallet';
 import { TOKEN_META, BASKET_DISPLAY_NAMES, EXPERT_BASKETS } from '../config/contracts';
-import { u256ToAddress } from '../utils/rawRpc';
+import { u256ToAddress, fetchTransactionReceipt } from '../utils/rawRpc';
 
 const TOKEN_COLORS: Record<string, string> = {
   MOTO: 'from-green-500 to-emerald-500',
@@ -34,6 +35,41 @@ const TOKEN_COLORS: Record<string, string> = {
   BERY: 'from-purple-500 to-pink-500',
 };
 
+// ── TX History Types ─────────────────────────────────────────────────
+
+type TxStatus = 'pending' | 'confirmed' | 'reverted';
+
+interface TrackedTx {
+  txId: string;
+  type: 'invest' | 'withdraw' | 'rebalance' | 'fee';
+  amount: string;
+  timestamp: number;
+  status: TxStatus;
+}
+
+function lsKey(basketId: bigint): string {
+  return `motobasket_txhist_${basketId}`;
+}
+
+function loadTxHistory(basketId: bigint): TrackedTx[] {
+  try {
+    const raw = localStorage.getItem(lsKey(basketId));
+    if (!raw) return [];
+    return JSON.parse(raw) as TrackedTx[];
+  } catch {
+    return [];
+  }
+}
+
+function saveTxHistory(basketId: bigint, txs: TrackedTx[]) {
+  try {
+    // Keep last 20
+    localStorage.setItem(lsKey(basketId), JSON.stringify(txs.slice(0, 20)));
+  } catch { /* quota exceeded — ignore */ }
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────
+
 function formatNAV(value: bigint): string {
   const num = Number(value) / 1e8;
   if (num >= 1_000_000) return `$${(num / 1_000_000).toFixed(2)}M`;
@@ -42,10 +78,75 @@ function formatNAV(value: bigint): string {
   return '--';
 }
 
+function statusBadge(status: TxStatus) {
+  switch (status) {
+    case 'pending':
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
+          <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
+          Pending
+        </span>
+      );
+    case 'confirmed':
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-green-500/10 text-green-400 border border-green-500/20">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
+          Confirmed
+        </span>
+      );
+    case 'reverted':
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/20">
+          <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+          Reverted
+        </span>
+      );
+  }
+}
+
+function txTypeLabel(type: TrackedTx['type']) {
+  switch (type) {
+    case 'invest': return 'Buy';
+    case 'withdraw': return 'Sell';
+    case 'rebalance': return 'Rebalance';
+    case 'fee': return 'Fee';
+  }
+}
+
+// ── Banner colors based on latest TX status ──────────────────────────
+
+function bannerClasses(status: TxStatus): string {
+  switch (status) {
+    case 'pending':
+      return 'bg-yellow-500/10 border-yellow-500/20';
+    case 'confirmed':
+      return 'bg-green-500/10 border-green-500/20';
+    case 'reverted':
+      return 'bg-red-500/10 border-red-500/20';
+  }
+}
+
+function bannerTextClass(status: TxStatus): string {
+  switch (status) {
+    case 'pending': return 'text-yellow-400';
+    case 'confirmed': return 'text-green-400';
+    case 'reverted': return 'text-red-400';
+  }
+}
+
+function bannerLabel(status: TxStatus): string {
+  switch (status) {
+    case 'pending': return 'TX pending...';
+    case 'confirmed': return 'TX confirmed';
+    case 'reverted': return 'TX reverted on-chain';
+  }
+}
+
+// ── Components ───────────────────────────────────────────────────────
+
 export default function IndexDetailPage() {
   const { address } = useParams<{ address: string }>();
 
-  // All routes use on-chain basket IDs
   let basketId: bigint;
   try {
     basketId = BigInt(address ?? '0');
@@ -80,8 +181,98 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
 
   const [buyInput, setBuyInput] = useState('');
   const [sellInput, setSellInput] = useState('');
-  const [txId, setTxId] = useState<string | null>(null);
 
+  // ── TX tracking ──────────────────────────────────────────────────
+  const [txHistory, setTxHistory] = useState<TrackedTx[]>(() => loadTxHistory(basketId));
+  const [latestTx, setLatestTx] = useState<TrackedTx | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Persist history to localStorage whenever it changes
+  useEffect(() => {
+    saveTxHistory(basketId, txHistory);
+  }, [basketId, txHistory]);
+
+  // Poll pending TXs for receipt
+  const pollPendingTxs = useCallback(async () => {
+    const pending = txHistory.filter(t => t.status === 'pending');
+    if (pending.length === 0) return;
+
+    let changed = false;
+    const updated = [...txHistory];
+
+    for (const tx of pending) {
+      try {
+        const receipt = await fetchTransactionReceipt(tx.txId);
+        if (!receipt) continue; // still pending
+
+        const idx = updated.findIndex(t => t.txId === tx.txId);
+        if (idx === -1) continue;
+
+        const newStatus: TxStatus = receipt.events.length > 0 ? 'confirmed' : 'reverted';
+        updated[idx] = { ...updated[idx], status: newStatus };
+        changed = true;
+
+        // Update the banner if this is the latest TX
+        if (latestTx && latestTx.txId === tx.txId) {
+          setLatestTx(prev => prev ? { ...prev, status: newStatus } : null);
+        }
+      } catch {
+        // ignore polling errors
+      }
+    }
+
+    if (changed) {
+      setTxHistory(updated);
+    }
+  }, [txHistory, latestTx]);
+
+  // Start/stop polling interval
+  useEffect(() => {
+    const hasPending = txHistory.some(t => t.status === 'pending');
+    if (hasPending) {
+      if (!pollRef.current) {
+        pollRef.current = setInterval(() => { pollPendingTxs(); }, 10_000);
+      }
+    } else {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    }
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [txHistory, pollPendingTxs]);
+
+  // ── TX submission helper ─────────────────────────────────────────
+  const trackTx = useCallback((txId: string, type: TrackedTx['type'], amount: string) => {
+    const entry: TrackedTx = {
+      txId,
+      type,
+      amount,
+      timestamp: Date.now(),
+      status: 'pending',
+    };
+    setLatestTx(entry);
+    setTxHistory(prev => [entry, ...prev]);
+    // Immediately start polling for this TX
+    setTimeout(async () => {
+      try {
+        const receipt = await fetchTransactionReceipt(txId);
+        if (receipt) {
+          const newStatus: TxStatus = receipt.events.length > 0 ? 'confirmed' : 'reverted';
+          setLatestTx(prev => prev?.txId === txId ? { ...prev, status: newStatus } : prev);
+          setTxHistory(prev => prev.map(t => t.txId === txId ? { ...t, status: newStatus } : t));
+        }
+      } catch { /* will be caught by interval */ }
+    }, 5_000);
+  }, []);
+
+  // ── Handlers ─────────────────────────────────────────────────────
   const formatBps = (bps: bigint): string => (Number(bps) / 100).toFixed(2) + '%';
   const shortenAddress = (hex: string): string => {
     if (hex.length <= 14) return hex;
@@ -97,7 +288,7 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
     if (amount <= 0n) return;
     const tx = await invest(amount);
     if (tx) {
-      setTxId(tx);
+      trackTx(tx, 'invest', buyInput + ' MOTO');
       setBuyInput('');
     }
   };
@@ -108,9 +299,17 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
     if (amount <= 0n) return;
     const tx = await withdraw(amount);
     if (tx) {
-      setTxId(tx);
+      trackTx(tx, 'withdraw', sellInput + ' shares');
       setSellInput('');
     }
+  };
+
+  const handleCopy = (e: React.MouseEvent, txId: string) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(txId).then(() => {
+      setCopyFeedback(true);
+      setTimeout(() => setCopyFeedback(false), 2000);
+    });
   };
 
   if (initialLoading) {
@@ -219,18 +418,28 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
         </div>
       )}
 
-      {txId && (
-        <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4 mb-6 flex justify-between items-center">
-          <p className="text-green-400 text-sm font-mono">
-            TX: {txId.slice(0, 16)}...
-            <button
-              onClick={() => { navigator.clipboard.writeText(txId); }}
-              className="ml-2 text-bitcoin-500 hover:text-bitcoin-400 underline cursor-pointer bg-transparent border-none"
-            >
-              Copy TX ID
-            </button>
-          </p>
-          <button onClick={() => setTxId(null)} className="text-dark-400 hover:text-white">&times;</button>
+      {/* TX Banner — shows status of most recent TX */}
+      {latestTx && (
+        <div className={`${bannerClasses(latestTx.status)} border rounded-xl p-4 mb-6 flex justify-between items-center`}>
+          <div className="flex items-center gap-3">
+            {latestTx.status === 'pending' && (
+              <svg className="w-4 h-4 animate-spin text-yellow-400" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+            )}
+            <p className={`${bannerTextClass(latestTx.status)} text-sm font-mono`}>
+              {bannerLabel(latestTx.status)}: {latestTx.txId.slice(0, 16)}...
+              <button
+                type="button"
+                onClick={(e) => handleCopy(e, latestTx.txId)}
+                className="ml-2 text-bitcoin-500 hover:text-bitcoin-400 underline cursor-pointer bg-transparent border-none text-sm font-mono"
+              >
+                {copyFeedback ? 'Copied!' : 'Copy TX ID'}
+              </button>
+            </p>
+          </div>
+          <button type="button" onClick={() => setLatestTx(null)} className="text-dark-400 hover:text-white text-lg leading-none">&times;</button>
         </div>
       )}
 
@@ -323,7 +532,7 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
             <div className="space-y-2 mb-4">
               <div className="flex justify-between text-sm">
                 <span className="text-dark-400">MOTO Balance</span>
-                <span className="text-white font-mono">{formatMoto(motoBalance)}</span>
+                <span className="text-white font-mono">{formatMotoDisplay(motoBalance)}</span>
               </div>
             </div>
 
@@ -342,6 +551,7 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
                   className="w-full px-4 py-3 bg-dark-900 border border-dark-600 rounded-xl text-white font-mono text-sm focus:border-bitcoin-500 focus:outline-none transition-colors pr-16"
                 />
                 <button
+                  type="button"
                   onClick={() => setBuyInput(formatMoto(motoBalance))}
                   className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-bitcoin-500/20 text-bitcoin-500 text-xs font-bold rounded hover:bg-bitcoin-500/30 transition-colors"
                 >
@@ -349,6 +559,7 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
                 </button>
               </div>
               <button
+                type="button"
                 onClick={handleBuy}
                 disabled={loading || !buyInput}
                 className="px-6 py-3 bg-gradient-to-r from-bitcoin-500 to-bitcoin-600 hover:from-bitcoin-600 hover:to-bitcoin-700 text-white font-medium rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed min-w-[80px]"
@@ -382,6 +593,7 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
                   className="w-full px-4 py-3 bg-dark-900 border border-dark-600 rounded-xl text-white font-mono text-sm focus:border-bitcoin-500 focus:outline-none transition-colors pr-16"
                 />
                 <button
+                  type="button"
                   onClick={() => setSellInput(formatBasket(position?.shares ?? 0n))}
                   className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-bitcoin-500/20 text-bitcoin-500 text-xs font-bold rounded hover:bg-bitcoin-500/30 transition-colors"
                 >
@@ -389,6 +601,7 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
                 </button>
               </div>
               <button
+                type="button"
                 onClick={handleSell}
                 disabled={loading || !sellInput}
                 className="px-6 py-3 bg-dark-700 hover:bg-dark-600 text-red-400 border border-red-500/30 font-medium rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed min-w-[80px]"
@@ -411,7 +624,7 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
             </div>
             <div>
               <div className="text-dark-500 text-xs mb-1 uppercase tracking-wide">Cost Basis</div>
-              <div className="text-white font-mono font-semibold text-lg">{formatMoto(position.costBasis)} MOTO</div>
+              <div className="text-white font-mono font-semibold text-lg">{formatMotoDisplay(position.costBasis)} MOTO</div>
             </div>
             <div>
               <div className="text-dark-500 text-xs mb-1 uppercase tracking-wide">Share Token</div>
@@ -424,27 +637,69 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
         </div>
       )}
 
+      {/* Recent Transactions */}
+      {txHistory.length > 0 && (
+        <div className="bg-dark-800 border border-dark-700 rounded-2xl p-6 mb-8">
+          <h2 className="text-lg font-display font-bold text-white mb-4">Recent Transactions</h2>
+          <div className="space-y-2">
+            {txHistory.slice(0, 10).map((tx) => (
+              <div key={tx.txId} className="flex items-center justify-between py-2 px-3 bg-dark-900 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                    tx.type === 'invest' ? 'bg-green-500/10 text-green-400' :
+                    tx.type === 'withdraw' ? 'bg-red-500/10 text-red-400' :
+                    'bg-blue-500/10 text-blue-400'
+                  }`}>
+                    {txTypeLabel(tx.type)}
+                  </span>
+                  <span className="text-dark-300 text-sm font-mono">{tx.amount}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-dark-500 text-xs font-mono">{tx.txId.slice(0, 12)}...</span>
+                  {statusBadge(tx.status)}
+                  <span className="text-dark-600 text-xs">
+                    {new Date(tx.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Creator Management Panel */}
       {isConnected && isCreator && (
         <div className="bg-dark-800 border border-bitcoin-500/30 rounded-2xl p-6 mb-8">
           <h2 className="text-xl font-display font-bold text-bitcoin-500 mb-4">Creator Management</h2>
           <div className="grid grid-cols-3 gap-3">
             <button
-              onClick={async () => { const tx = await scheduleRebalance(basketId); if (tx) setTxId(tx); }}
+              type="button"
+              onClick={async () => {
+                const tx = await scheduleRebalance(basketId);
+                if (tx) trackTx(tx, 'rebalance', 'Schedule');
+              }}
               disabled={loading || !isActive}
               className="px-4 py-3 bg-dark-700 hover:bg-dark-600 text-white text-sm font-medium rounded-xl border border-dark-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? '...' : 'Schedule Rebalance'}
             </button>
             <button
-              onClick={async () => { const tx = await executeRebalance(basketId); if (tx) setTxId(tx); }}
+              type="button"
+              onClick={async () => {
+                const tx = await executeRebalance(basketId);
+                if (tx) trackTx(tx, 'rebalance', 'Execute');
+              }}
               disabled={loading || !isActive}
               className="px-4 py-3 bg-dark-700 hover:bg-dark-600 text-white text-sm font-medium rounded-xl border border-dark-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? '...' : 'Execute Rebalance'}
             </button>
             <button
-              onClick={async () => { const tx = await collectPerfFee(basketId); if (tx) setTxId(tx); }}
+              type="button"
+              onClick={async () => {
+                const tx = await collectPerfFee(basketId);
+                if (tx) trackTx(tx, 'fee', 'Collect');
+              }}
               disabled={loading || !isActive}
               className="px-4 py-3 bg-bitcoin-500/20 hover:bg-bitcoin-500/30 text-bitcoin-400 text-sm font-medium rounded-xl border border-bitcoin-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >

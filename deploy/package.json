@@ -1,0 +1,20 @@
+{
+  "name": "motobasket-deploy",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "deploy": "tsx deploy.ts",
+    "deploy:opai": "INDEX=OPAI tsx deploy.ts",
+    "deploy:opmeme": "INDEX=OPMEME tsx deploy.ts",
+    "deploy:opdefi": "INDEX=OPDEFI tsx deploy.ts"
+  },
+  "dependencies": {
+    "@btc-vision/bip32": "^7.1.2",
+    "@btc-vision/bitcoin": "rc",
+    "@btc-vision/ecpair": "latest",
+    "@btc-vision/transaction": "rc",
+    "bip39": "^3.1.0",
+    "opnet": "rc",
+    "tsx": "latest"
+  }
+}

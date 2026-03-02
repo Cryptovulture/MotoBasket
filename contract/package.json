@@ -1,0 +1,16 @@
+{
+  "name": "motobasket-index-token",
+  "version": "1.0.0",
+  "description": "MotoBasket IndexToken — per-index OP20 token with built-in MotoSwap router swaps",
+  "scripts": {
+    "build": "asc src/index.ts --target release --exportRuntime",
+    "build:debug": "asc src/index.ts --target debug --exportRuntime"
+  },
+  "dependencies": {
+    "@btc-vision/btc-runtime": "rc",
+    "@btc-vision/as-bignum": "latest",
+    "@btc-vision/assemblyscript": "latest",
+    "@btc-vision/opnet-transform": "latest",
+    "@assemblyscript/loader": "latest"
+  }
+}

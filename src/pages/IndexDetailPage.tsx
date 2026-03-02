@@ -1,17 +1,16 @@
 import { useParams, Link } from 'react-router-dom';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
-  useBasketDetail,
-  formatBasket,
+  useIndexToken,
+  formatToken,
   formatMoto,
   formatMotoDisplay,
-  formatToken,
   parseMotoInput,
-  parseBasketInput,
-} from '../hooks/useBasketDetail';
+  parseTokenInput,
+} from '../hooks/useIndexToken';
 import { useWallet } from '../hooks/useWallet';
-import { TOKEN_META, BASKET_DISPLAY_NAMES, EXPERT_BASKETS, EXPLORER_TX_URL } from '../config/contracts';
-import { u256ToAddress, fetchTransactionReceipt } from '../utils/rawRpc';
+import { EXPLORER_TX_URL, INDEX_DECIMALS } from '../config/contracts';
+import { INDEX_CONFIGS, CATEGORY_META } from '../config/indexes';
 import {
   type TrackedTx,
   type TxStatus,
@@ -21,6 +20,7 @@ import {
   txTypeLabel,
   timeAgo,
 } from '../utils/txHistory';
+import { fetchTransactionReceipt } from '../utils/rawRpc';
 
 const TOKEN_COLORS: Record<string, string> = {
   MOTO: 'from-green-500 to-emerald-500',
@@ -38,32 +38,13 @@ const TOKEN_COLORS: Record<string, string> = {
   LNDB: 'from-teal-500 to-cyan-500',
   YLDP: 'from-emerald-500 to-teal-500',
   SWPX: 'from-sky-500 to-blue-500',
-  MNGO: 'from-orange-400 to-yellow-500',
-  APPL: 'from-red-500 to-green-500',
-  AVDO: 'from-green-500 to-lime-500',
-  BERY: 'from-purple-500 to-pink-500',
 };
-
-// ── Helpers ──────────────────────────────────────────────────────────
-
-function formatNAV(value: bigint): string {
-  const num = Number(value) / 1e8;
-  if (num >= 1_000_000) return `$${(num / 1_000_000).toFixed(2)}M`;
-  if (num >= 1_000) return `$${(num / 1_000).toFixed(1)}K`;
-  if (num > 0) return num.toFixed(4);
-  return '--';
-}
-
-// ── Banner colors based on latest TX status ──────────────────────────
 
 function bannerClasses(status: TxStatus): string {
   switch (status) {
-    case 'pending':
-      return 'bg-yellow-500/10 border-yellow-500/20';
-    case 'confirmed':
-      return 'bg-green-500/10 border-green-500/20';
-    case 'reverted':
-      return 'bg-red-500/10 border-red-500/20';
+    case 'pending': return 'bg-yellow-500/10 border-yellow-500/20';
+    case 'confirmed': return 'bg-green-500/10 border-green-500/20';
+    case 'reverted': return 'bg-red-500/10 border-red-500/20';
   }
 }
 
@@ -83,16 +64,16 @@ function bannerLabel(status: TxStatus): string {
   }
 }
 
-// ── Components ───────────────────────────────────────────────────────
-
 export default function IndexDetailPage() {
   const { address } = useParams<{ address: string }>();
 
-  let basketId: bigint;
-  try {
-    basketId = BigInt(address ?? '0');
-    if (basketId <= 0n) throw new Error();
-  } catch {
+  const indexConfig = useMemo(() => {
+    if (!address) return null;
+    const decoded = decodeURIComponent(address);
+    return INDEX_CONFIGS.find(c => c.address.toLowerCase() === decoded.toLowerCase()) ?? null;
+  }, [address]);
+
+  if (!indexConfig) {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <Link to="/" className="text-dark-400 hover:text-bitcoin-500 transition-colors text-sm mb-6 inline-block">
@@ -100,41 +81,41 @@ export default function IndexDetailPage() {
         </Link>
         <div className="text-center py-20">
           <h1 className="text-3xl font-display font-bold text-white mb-4">Index Not Found</h1>
+          <p className="text-dark-400 mb-4">No index token at this address.</p>
           <Link to="/" className="text-bitcoin-500 hover:text-bitcoin-400 transition-colors">Back to Indexes</Link>
         </div>
       </div>
     );
   }
 
-  return <OnChainIndexDetail basketId={basketId} />;
+  return <IndexDetail config={indexConfig} />;
 }
 
-function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
+function IndexDetail({ config }: { config: typeof INDEX_CONFIGS[number] }) {
   const wallet = useWallet();
   const isConnected = wallet.isConnected;
+  const category = CATEGORY_META[config.category];
 
   const {
-    info, name, nav, components, position, motoBalance,
+    components, totalSupply, userBalance, motoBalance,
     loading, loadingStep, initialLoading, error,
-    invest, withdraw,
-    scheduleRebalance, executeRebalance, collectPerfFee,
-  } = useBasketDetail(basketId);
+    invest, redeem,
+  } = useIndexToken(config);
 
   const [buyInput, setBuyInput] = useState('');
   const [sellInput, setSellInput] = useState('');
 
-  // ── TX tracking ──────────────────────────────────────────────────
-  const [txHistory, setTxHistory] = useState<TrackedTx[]>(() => loadTxHistory(basketId));
+  // ── TX tracking ─────────────────────────────────────────────────
+  const historyKey = config.address || config.symbol;
+  const [txHistory, setTxHistory] = useState<TrackedTx[]>(() => loadTxHistory(historyKey));
   const [latestTx, setLatestTx] = useState<TrackedTx | null>(null);
   const [copyFeedback, setCopyFeedback] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Persist history to localStorage whenever it changes
   useEffect(() => {
-    saveTxHistory(basketId, txHistory);
-  }, [basketId, txHistory]);
+    saveTxHistory(historyKey, txHistory);
+  }, [txHistory, historyKey]);
 
-  // Poll pending TXs for receipt
   const pollPendingTxs = useCallback(async () => {
     const pending = txHistory.filter(t => t.status === 'pending');
     if (pending.length === 0) return;
@@ -145,7 +126,7 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
     for (const tx of pending) {
       try {
         const receipt = await fetchTransactionReceipt(tx.txId);
-        if (!receipt) continue; // still pending
+        if (!receipt) continue;
 
         const idx = updated.findIndex(t => t.txId === tx.txId);
         if (idx === -1) continue;
@@ -156,21 +137,15 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
         updated[idx] = { ...updated[idx], status: newStatus, revertReason };
         changed = true;
 
-        // Update the banner if this is the latest TX
         if (latestTx && latestTx.txId === tx.txId) {
           setLatestTx(prev => prev ? { ...prev, status: newStatus } : null);
         }
-      } catch {
-        // ignore polling errors
-      }
+      } catch { /* ignore */ }
     }
 
-    if (changed) {
-      setTxHistory(updated);
-    }
+    if (changed) setTxHistory(updated);
   }, [txHistory, latestTx]);
 
-  // Start/stop polling interval
   useEffect(() => {
     const hasPending = txHistory.some(t => t.status === 'pending');
     if (hasPending) {
@@ -191,18 +166,10 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
     };
   }, [txHistory, pollPendingTxs]);
 
-  // ── TX submission helper ─────────────────────────────────────────
   const trackTx = useCallback((txId: string, type: TrackedTx['type'], amount: string) => {
-    const entry: TrackedTx = {
-      txId,
-      type,
-      amount,
-      timestamp: Date.now(),
-      status: 'pending',
-    };
+    const entry: TrackedTx = { txId, type, amount, timestamp: Date.now(), status: 'pending' };
     setLatestTx(entry);
     setTxHistory(prev => [entry, ...prev]);
-    // Immediately start polling for this TX
     setTimeout(async () => {
       try {
         const receipt = await fetchTransactionReceipt(txId);
@@ -213,18 +180,10 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
           setLatestTx(prev => prev?.txId === txId ? { ...prev, status: newStatus, revertReason } : prev);
           setTxHistory(prev => prev.map(t => t.txId === txId ? { ...t, status: newStatus, revertReason } : t));
         }
-      } catch { /* will be caught by interval */ }
+      } catch { /* interval will catch it */ }
     }, 5_000);
   }, []);
 
-  // ── Handlers ─────────────────────────────────────────────────────
-  const formatBps = (bps: bigint): string => (Number(bps) / 100).toFixed(2) + '%';
-  const shortenAddress = (hex: string): string => {
-    if (hex.length <= 14) return hex;
-    return `${hex.slice(0, 8)}...${hex.slice(-4)}`;
-  };
-
-  const displayName = BASKET_DISPLAY_NAMES[basketId.toString()] || name || `Index #${basketId}`;
   const totalWeight = components.reduce((s, c) => s + Number(c.weight), 0);
 
   const handleBuy = async () => {
@@ -240,11 +199,11 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
 
   const handleSell = async () => {
     if (!sellInput) return;
-    const amount = parseBasketInput(sellInput);
+    const amount = parseTokenInput(sellInput, INDEX_DECIMALS);
     if (amount <= 0n) return;
-    const tx = await withdraw(amount);
+    const tx = await redeem(amount);
     if (tx) {
-      trackTx(tx, 'withdraw', sellInput + ' shares');
+      trackTx(tx, 'withdraw', sellInput + ' ' + config.symbol);
       setSellInput('');
     }
   };
@@ -264,16 +223,7 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
           &larr; Back to Indexes
         </Link>
         <div className="animate-pulse space-y-6">
-          <div className="flex items-start justify-between">
-            <div>
-              <div className="h-10 w-64 bg-dark-700 rounded-lg mb-3" />
-              <div className="h-4 w-32 bg-dark-800 rounded" />
-            </div>
-            <div className="text-right">
-              <div className="h-10 w-24 bg-dark-700 rounded-lg mb-2" />
-              <div className="h-4 w-16 bg-dark-800 rounded" />
-            </div>
-          </div>
+          <div className="h-10 w-64 bg-dark-700 rounded-lg" />
           <div className="bg-dark-800 border border-dark-700 rounded-2xl p-6">
             <div className="h-6 w-48 bg-dark-700 rounded mb-4" />
             <div className="h-3 w-full bg-dark-700 rounded-full mb-6" />
@@ -289,24 +239,6 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
     );
   }
 
-  if (!info) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="text-center py-20">
-          <h1 className="text-3xl font-display font-bold text-white mb-4">Index Not Found</h1>
-          <Link to="/" className="text-bitcoin-500 hover:text-bitcoin-400 transition-colors">
-            Back to Indexes
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  const expertMeta = EXPERT_BASKETS[basketId.toString()];
-  const creatorHex = '0x' + info.creator.toString(16).padStart(64, '0');
-  const isActive = info.active !== 0n;
-  const isCreator = wallet.senderAddress && creatorHex.toLowerCase() === wallet.senderAddress.toLowerCase();
-
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
       <Link to="/" className="text-dark-400 hover:text-bitcoin-500 transition-colors text-sm mb-6 inline-block">
@@ -315,45 +247,27 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
 
       {/* Header */}
       <div className="flex items-start justify-between mb-8">
-        <div className="flex items-center gap-4">
-          {expertMeta && (
-            <img
-              src={expertMeta.avatar}
-              alt={expertMeta.creator}
-              className="w-16 h-16 rounded-full object-cover border-2 border-bitcoin-500/30"
-            />
-          )}
-          <div>
-            <div className="flex items-center space-x-4 mb-2">
-              <h1 className="text-4xl font-display font-bold text-white">{displayName}</h1>
-              <span className={`px-3 py-1 text-xs font-medium rounded border ${
-                isActive
-                  ? 'bg-green-500/10 text-green-500 border-green-500/20'
-                  : 'bg-red-500/10 text-red-500 border-red-500/20'
-              }`}>
-                {isActive ? 'Live' : 'Inactive'}
+        <div>
+          <div className="flex items-center space-x-4 mb-2">
+            <h1 className="text-4xl font-display font-bold text-white">{config.symbol}</h1>
+            <span className="px-3 py-1 bg-green-500/10 text-green-500 text-xs font-medium rounded border border-green-500/20">
+              Live
+            </span>
+            {category && (
+              <span className={`px-3 py-1 bg-gradient-to-r ${category.gradient} text-white text-xs font-medium rounded`}>
+                {category.label}
               </span>
-              {expertMeta && (
-                <span className="px-3 py-1 bg-bitcoin-500/10 text-bitcoin-500 text-xs font-medium rounded border border-bitcoin-500/20">
-                  Expert
-                </span>
-              )}
-            </div>
-            {expertMeta ? (
-              <p className="text-dark-400">
-                by <span className="text-bitcoin-500 font-medium">{expertMeta.creator}</span>
-                <span className="text-dark-500 ml-2">- {expertMeta.description}</span>
-              </p>
-            ) : (
-              <p className="text-dark-500 text-sm font-mono">{name}</p>
             )}
           </div>
+          <p className="text-dark-400">{config.name}</p>
+          <p className="text-dark-500 text-sm mt-1">{config.description}</p>
         </div>
         <div className="text-right">
-          <div className="text-3xl font-display font-bold text-white">
-            {formatNAV(nav)} MOTO
+          <div className="text-sm text-dark-500 mb-1">Total Supply</div>
+          <div className="text-2xl font-display font-bold text-white">
+            {totalSupply > 0n ? formatToken(totalSupply, INDEX_DECIMALS) : '--'}
           </div>
-          <div className="text-sm text-dark-500">NAV</div>
+          <div className="text-xs text-dark-500">{config.symbol}</div>
         </div>
       </div>
 
@@ -363,7 +277,7 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
         </div>
       )}
 
-      {/* TX Banner — shows status of most recent TX */}
+      {/* TX Banner */}
       {latestTx && (
         <div className={`${bannerClasses(latestTx.status)} border rounded-xl p-4 mb-6 flex justify-between items-center`}>
           <div className="flex items-center gap-3">
@@ -375,25 +289,13 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
             )}
             <p className={`${bannerTextClass(latestTx.status)} text-sm font-mono`}>
               {bannerLabel(latestTx.status)}:{' '}
-              <a
-                href={EXPLORER_TX_URL + latestTx.txId}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hover:text-bitcoin-500 underline transition-colors"
-              >
+              <a href={EXPLORER_TX_URL + latestTx.txId} target="_blank" rel="noopener noreferrer" className="hover:text-bitcoin-500 underline transition-colors">
                 {latestTx.txId.slice(0, 16)}...
               </a>
-              <button
-                type="button"
-                onClick={(e) => handleCopy(e, latestTx.txId)}
-                className="ml-2 text-bitcoin-500 hover:text-bitcoin-400 underline cursor-pointer bg-transparent border-none text-sm font-mono"
-              >
+              <button type="button" onClick={(e) => handleCopy(e, latestTx.txId)} className="ml-2 text-bitcoin-500 hover:text-bitcoin-400 underline cursor-pointer bg-transparent border-none text-sm font-mono">
                 {copyFeedback ? 'Copied!' : 'Copy TX ID'}
               </button>
             </p>
-            {latestTx.status === 'reverted' && latestTx.revertReason && (
-              <p className="text-red-400/80 text-xs mt-1">{latestTx.revertReason}</p>
-            )}
           </div>
           <button type="button" onClick={() => setLatestTx(null)} className="text-dark-400 hover:text-white text-lg leading-none">&times;</button>
         </div>
@@ -402,53 +304,43 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
       {/* Components */}
       {components.length > 0 && (
         <div className="bg-dark-800 border border-dark-700 rounded-2xl p-6 mb-8">
-          <h2 className="text-lg font-display font-bold text-white mb-4">
-            Portfolio Composition
-          </h2>
+          <h2 className="text-lg font-display font-bold text-white mb-4">Portfolio Composition</h2>
 
-          {/* Weight bar */}
           <div className="flex h-3 rounded-full overflow-hidden mb-6 bg-dark-700">
             {components.map((c, i) => {
-              const tokenHex = u256ToAddress(c.token);
-              const meta = TOKEN_META[tokenHex];
               const pct = totalWeight > 0 ? (Number(c.weight) / totalWeight) * 100 : 0;
               const colors = ['bg-yellow-500', 'bg-purple-500', 'bg-red-500', 'bg-green-500', 'bg-blue-500'];
               return (
                 <div
-                  key={i}
-                  className={`${colors[i % colors.length]} transition-all relative group`}
+                  key={c.address}
+                  className={`${colors[i % colors.length]} transition-all`}
                   style={{ width: `${pct}%` }}
-                  title={`${meta?.symbol ?? '?'} ${pct.toFixed(1)}%`}
+                  title={`${c.symbol} ${pct.toFixed(1)}%`}
                 />
               );
             })}
           </div>
 
-          {/* Token cards */}
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             {components.map((c, i) => {
-              const tokenHex = u256ToAddress(c.token);
-              const meta = TOKEN_META[tokenHex];
               const pct = totalWeight > 0 ? (Number(c.weight) / totalWeight) * 100 : 0;
-              const gradient = meta ? (TOKEN_COLORS[meta.symbol] || 'from-gray-500 to-gray-600') : 'from-gray-500 to-gray-600';
-              const symbol = meta?.symbol ?? '?';
-              const decimals = meta?.decimals ?? 8;
+              const gradient = TOKEN_COLORS[c.symbol] || 'from-gray-500 to-gray-600';
               return (
-                <div key={i} className="bg-dark-900 border border-dark-700 rounded-xl p-4">
+                <div key={c.address} className="bg-dark-900 border border-dark-700 rounded-xl p-4">
                   <div className="flex items-center gap-3 mb-2">
                     <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${gradient} flex items-center justify-center text-xs font-bold text-white`}>
-                      {symbol[0]}
+                      {c.symbol[0]}
                     </div>
                     <div>
-                      <div className="text-white font-semibold text-sm">{meta?.symbol ?? shortenAddress(tokenHex)}</div>
-                      {meta && <div className="text-dark-500 text-xs">{meta.name}</div>}
+                      <div className="text-white font-semibold text-sm">{c.symbol}</div>
+                      <div className="text-dark-500 text-xs">{c.name}</div>
                     </div>
                   </div>
                   <div className="flex justify-between items-end">
                     <div className="text-green-500 font-mono font-bold text-lg">{pct.toFixed(1)}%</div>
                     <div className="text-right">
                       <div className="text-dark-500 text-xs font-mono">
-                        {formatToken(c.holding, decimals)} held
+                        {formatToken(c.holding, 18)} held
                       </div>
                     </div>
                   </div>
@@ -459,32 +351,28 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
         </div>
       )}
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
         <div className="bg-dark-800 border border-dark-700 rounded-xl p-4">
-          <div className="text-dark-500 text-xs mb-1 uppercase tracking-wide">Total Shares</div>
-          <div className="text-white font-mono font-semibold">{formatBasket(info.totalShares)}</div>
+          <div className="text-dark-500 text-xs mb-1 uppercase tracking-wide">Total Supply</div>
+          <div className="text-white font-mono font-semibold">{totalSupply > 0n ? formatToken(totalSupply, INDEX_DECIMALS) : '--'}</div>
         </div>
         <div className="bg-dark-800 border border-dark-700 rounded-xl p-4">
-          <div className="text-dark-500 text-xs mb-1 uppercase tracking-wide">NAV</div>
-          <div className="text-white font-mono font-semibold">{formatNAV(nav)} MOTO</div>
+          <div className="text-dark-500 text-xs mb-1 uppercase tracking-wide">Components</div>
+          <div className="text-white font-mono font-semibold">{components.length}</div>
         </div>
         <div className="bg-dark-800 border border-dark-700 rounded-xl p-4">
-          <div className="text-dark-500 text-xs mb-1 uppercase tracking-wide">Perf Fee</div>
-          <div className="text-bitcoin-500 font-mono font-semibold">{formatBps(info.perfFeeBps)}</div>
-        </div>
-        <div className="bg-dark-800 border border-dark-700 rounded-xl p-4">
-          <div className="text-dark-500 text-xs mb-1 uppercase tracking-wide">Investors</div>
-          <div className="text-white font-mono font-semibold">{Number(info.investorCount) > 0 ? info.investorCount.toString() : '--'}</div>
+          <div className="text-dark-500 text-xs mb-1 uppercase tracking-wide">Standard</div>
+          <div className="text-bitcoin-500 font-mono font-semibold">OP20</div>
         </div>
       </div>
 
       {/* Buy / Sell */}
-      {isConnected && isActive && (
+      {isConnected && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
           {/* Buy Panel */}
           <div className="bg-dark-800 border border-dark-700 rounded-2xl p-6">
-            <h3 className="text-lg font-display font-bold text-white mb-4">Buy with MOTO</h3>
+            <h3 className="text-lg font-display font-bold text-white mb-4">Buy {config.symbol} with MOTO</h3>
             <div className="space-y-2 mb-4">
               <div className="flex justify-between text-sm">
                 <span className="text-dark-400">MOTO Balance</span>
@@ -527,11 +415,11 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
 
           {/* Sell Panel */}
           <div className="bg-dark-800 border border-dark-700 rounded-2xl p-6">
-            <h3 className="text-lg font-display font-bold text-white mb-4">Sell</h3>
+            <h3 className="text-lg font-display font-bold text-white mb-4">Redeem {config.symbol}</h3>
             <div className="space-y-2 mb-4">
               <div className="flex justify-between text-sm">
-                <span className="text-dark-400">Your Shares</span>
-                <span className="text-green-500 font-mono">{formatBasket(position?.shares ?? 0n)}</span>
+                <span className="text-dark-400">Your {config.symbol}</span>
+                <span className="text-green-500 font-mono">{formatToken(userBalance, INDEX_DECIMALS)}</span>
               </div>
             </div>
             <div className="flex gap-2 mb-3">
@@ -539,7 +427,7 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
                 <input
                   type="text"
                   inputMode="decimal"
-                  placeholder="Shares to sell"
+                  placeholder={`${config.symbol} to redeem`}
                   value={sellInput}
                   onChange={e => {
                     const v = e.target.value;
@@ -550,7 +438,7 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
                 />
                 <button
                   type="button"
-                  onClick={() => setSellInput(formatBasket(position?.shares ?? 0n))}
+                  onClick={() => setSellInput(formatToken(userBalance, INDEX_DECIMALS))}
                   className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-bitcoin-500/20 text-bitcoin-500 text-xs font-bold rounded hover:bg-bitcoin-500/30 transition-colors"
                 >
                   MAX
@@ -562,38 +450,38 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
                 disabled={loading || !sellInput}
                 className="px-6 py-3 bg-dark-700 hover:bg-dark-600 text-red-400 border border-red-500/30 font-medium rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed min-w-[80px]"
               >
-                {loading ? 'Selling...' : 'Sell'}
+                {loading ? 'Redeeming...' : 'Redeem'}
               </button>
             </div>
+            {userBalance > 0n && components.length > 0 && (
+              <p className="text-dark-500 text-xs mt-2">
+                Redeeming returns proportional amounts of {components.map(c => c.symbol).join(', ')} to your wallet.
+              </p>
+            )}
           </div>
         </div>
       )}
 
       {/* Your Position */}
-      {isConnected && position && position.shares > 0n && (
+      {isConnected && userBalance > 0n && (
         <div className="bg-dark-800 border border-dark-700 rounded-2xl p-6 mb-8">
           <h2 className="text-xl font-display font-bold text-white mb-4">Your Position</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <div className="text-dark-500 text-xs mb-1 uppercase tracking-wide">Your Shares</div>
-              <div className="text-green-500 font-mono font-semibold text-lg">{formatBasket(position.shares)}</div>
+              <div className="text-dark-500 text-xs mb-1 uppercase tracking-wide">Your {config.symbol}</div>
+              <div className="text-green-500 font-mono font-semibold text-lg">{formatToken(userBalance, INDEX_DECIMALS)}</div>
             </div>
             <div>
-              <div className="text-dark-500 text-xs mb-1 uppercase tracking-wide">Cost Basis</div>
-              <div className="text-white font-mono font-semibold text-lg">{formatMotoDisplay(position.costBasis)} MOTO</div>
-            </div>
-            <div>
-              <div className="text-dark-500 text-xs mb-1 uppercase tracking-wide">Share Token</div>
-              <div className="text-dark-300 font-mono text-xs">
-                {info.shareToken > 0n ? shortenAddress(u256ToAddress(info.shareToken)) : 'Not set'}
+              <div className="text-dark-500 text-xs mb-1 uppercase tracking-wide">Share of Pool</div>
+              <div className="text-white font-mono font-semibold text-lg">
+                {totalSupply > 0n ? ((Number(userBalance) / Number(totalSupply)) * 100).toFixed(2) + '%' : '--'}
               </div>
-              <div className="text-dark-500 text-xs mt-0.5">OP20 &middot; Transferable</div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Recent Transactions */}
+      {/* Recent TXs */}
       {txHistory.length > 0 && (
         <div className="bg-dark-800 border border-dark-700 rounded-2xl p-6 mb-8">
           <h2 className="text-lg font-display font-bold text-white mb-4">Recent Transactions</h2>
@@ -611,12 +499,7 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
                   <span className="text-dark-300 text-sm font-mono">{tx.amount}</span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <a
-                    href={EXPLORER_TX_URL + tx.txId}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-dark-500 text-xs font-mono hover:text-bitcoin-500 transition-colors"
-                  >
+                  <a href={EXPLORER_TX_URL + tx.txId} target="_blank" rel="noopener noreferrer" className="text-dark-500 text-xs font-mono hover:text-bitcoin-500 transition-colors">
                     {tx.txId.slice(0, 12)}...
                   </a>
                   {(() => { const b = statusBadge(tx.status); return (
@@ -628,54 +511,9 @@ function OnChainIndexDetail({ basketId }: { basketId: bigint }) {
                   <span className="text-dark-400 text-xs whitespace-nowrap" title={new Date(tx.timestamp).toLocaleString()}>
                     {timeAgo(tx.timestamp)}
                   </span>
-                  <span className="text-dark-600 text-xs">
-                    {new Date(tx.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
                 </div>
               </div>
             ))}
-          </div>
-        </div>
-      )}
-
-      {/* Creator Management Panel */}
-      {isConnected && isCreator && (
-        <div className="bg-dark-800 border border-bitcoin-500/30 rounded-2xl p-6 mb-8">
-          <h2 className="text-xl font-display font-bold text-bitcoin-500 mb-4">Creator Management</h2>
-          <div className="grid grid-cols-3 gap-3">
-            <button
-              type="button"
-              onClick={async () => {
-                const tx = await scheduleRebalance(basketId);
-                if (tx) trackTx(tx, 'rebalance', 'Schedule');
-              }}
-              disabled={loading || !isActive}
-              className="px-4 py-3 bg-dark-700 hover:bg-dark-600 text-white text-sm font-medium rounded-xl border border-dark-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? '...' : 'Schedule Rebalance'}
-            </button>
-            <button
-              type="button"
-              onClick={async () => {
-                const tx = await executeRebalance(basketId);
-                if (tx) trackTx(tx, 'rebalance', 'Execute');
-              }}
-              disabled={loading || !isActive}
-              className="px-4 py-3 bg-dark-700 hover:bg-dark-600 text-white text-sm font-medium rounded-xl border border-dark-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? '...' : 'Execute Rebalance'}
-            </button>
-            <button
-              type="button"
-              onClick={async () => {
-                const tx = await collectPerfFee(basketId);
-                if (tx) trackTx(tx, 'fee', 'Collect');
-              }}
-              disabled={loading || !isActive}
-              className="px-4 py-3 bg-bitcoin-500/20 hover:bg-bitcoin-500/30 text-bitcoin-400 text-sm font-medium rounded-xl border border-bitcoin-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? '...' : 'Collect Fee'}
-            </button>
           </div>
         </div>
       )}

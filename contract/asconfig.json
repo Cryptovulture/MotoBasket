@@ -1,0 +1,38 @@
+{
+  "targets": {
+    "debug": {
+      "outFile": "build/debug.wasm",
+      "textFile": "build/debug.wat",
+      "sourceMap": true,
+      "debug": true
+    },
+    "release": {
+      "outFile": "build/release.wasm",
+      "textFile": "build/release.wat",
+      "sourceMap": true,
+      "optimizeLevel": 3,
+      "shrinkLevel": 1,
+      "converge": false,
+      "noAssert": false
+    }
+  },
+  "options": {
+    "runtime": "stub",
+    "memoryBase": 0,
+    "initialMemory": 1,
+    "exportStart": "start",
+    "noAssert": false,
+    "shrinkLevel": 1,
+    "use": ["abort=src/index/abort"],
+    "enable": [
+      "sign-extension",
+      "mutable-globals",
+      "nontrapping-f2i",
+      "bulk-memory",
+      "simd",
+      "reference-types",
+      "multi-value"
+    ],
+    "transform": "@btc-vision/opnet-transform"
+  }
+}

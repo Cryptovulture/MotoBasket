@@ -1,32 +1,29 @@
 /**
- * Raw RPC utility — bypasses the opnet SDK to call the ExpertIndex contract
- * directly via fetch(). This avoids any browser-specific SDK issues.
+ * Raw RPC utility — calls IndexToken and OP20 contracts directly via fetch().
+ * Bypasses the opnet SDK for read operations to avoid browser-specific issues.
  */
 
-import { RPC_URL, EXPERT_INDEX_ADDRESS, BASKET_TOKEN_ADDRESS, MOTO_TOKEN_ADDRESS, MOTOSWAP_ROUTER_ADDRESS } from '../config/contracts';
+import { RPC_URL, MOTO_TOKEN_ADDRESS } from '../config/contracts';
 
 const RPC_ENDPOINT = `${RPC_URL}/api/v1/json-rpc`;
 let rpcId = 0;
 
 // Pre-computed SHA256-based selectors (OPNet uses SHA256, NOT keccak256)
-const SEL = {
-  getStats: 'add8852a',
-  getBasketInfo: '722ba4e7',
-  getBasketName: 'c60aab24',
-  getBasketNAV: '7d6bd3b4',
-  getComponent: '05584029',
-  getInvestorPosition: 'b3c9bc4c',
+// These match the contract's @method selectors from the build output
+const INDEX_SEL = {
+  getComponentCount: '9d33844c',
+  getComponent: 'b0749109',
+  getHolding: '69b8232d',
 } as const;
 
-// OP20 selectors (lowercase types: SHA256("methodName(type,...)")[:4])
 const OP20_SEL = {
   balanceOf: '5b46f8f6',
-  allowance: 'd864b7ca', // SHA256("allowance(address,address)")[:4]
+  allowance: 'd864b7ca',
+  totalSupply: 'a368022e',
 } as const;
 
-// MotoSwap Router selectors
 const ROUTER_SEL = {
-  getAmountsOut: 'a8e365fa', // SHA256("getAmountsOut(uint256,address[])")[:4]
+  getAmountsOut: 'a8e365fa',
 } as const;
 
 /** Encode a bigint as a 32-byte big-endian hex string */
@@ -58,8 +55,7 @@ function safeReadU256(buf: Uint8Array, offset: number): bigint {
 }
 
 /** Call a contract method and return the raw result bytes */
-async function contractCall(calldata: string, contractAddress: string = EXPERT_INDEX_ADDRESS): Promise<Uint8Array> {
-  // btc_call params: [contractAddress, calldataHex, from?, fromLegacy?, height?]
+async function contractCall(calldata: string, contractAddress: string): Promise<Uint8Array> {
   const result = await rpcCall('btc_call', [contractAddress, calldata]) as {
     result?: string;
     revert?: string;
@@ -70,7 +66,6 @@ async function contractCall(calldata: string, contractAddress: string = EXPERT_I
   if (result.error) throw new Error(result.error.message);
   if (!result.result) throw new Error('No result from contract call');
 
-  // Result is base64-encoded
   const binary = atob(result.result);
   const buf = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) {
@@ -82,11 +77,9 @@ async function contractCall(calldata: string, contractAddress: string = EXPERT_I
 /**
  * OPNet stores addresses as u256 using little-endian u256.fromBytes().
  * When read as a bigint, the bytes are reversed vs the canonical hex.
- * This function reverses the byte order to match TOKEN_META addresses.
  */
 export function u256ToAddress(val: bigint): string {
   const hex = val.toString(16).padStart(64, '0');
-  // Reverse bytes: take pairs of hex chars and reverse the array
   const bytes: string[] = [];
   for (let i = 0; i < 64; i += 2) {
     bytes.push(hex.slice(i, i + 2));
@@ -94,130 +87,68 @@ export function u256ToAddress(val: bigint): string {
   return '0x' + bytes.reverse().join('');
 }
 
-// ── Public API ──────────────────────────────────────────────────────
-
-export interface RawBasket {
-  basketId: bigint;
-  name: string;
-  creator: bigint;
-  compCount: bigint;
-  totalShares: bigint;
-  totalMoto: bigint;
-  perfFeeBps: bigint;
-  createdAt: bigint;
-  lockState: bigint;
-  active: bigint;
-  investorCount: bigint;
-  shareToken: bigint;
-  nav: bigint;
+/**
+ * Encode a canonical 0x-prefixed address as a calldata parameter.
+ * No byte reversal — the AS runtime reads raw bytes directly.
+ */
+function encodeAddressParam(address: string): string {
+  return address.replace(/^0x/, '').toLowerCase().padStart(64, '0');
 }
 
-export interface RawStats {
-  nextBasketId: bigint;
-  platformFeeBps: bigint;
+/**
+ * Encode a u16 value as a 2-byte big-endian hex string.
+ * OPNet uses u16 BE for array lengths in calldata.
+ */
+function encodeU16BE(val: number): string {
+  return ((val >> 8) & 0xFF).toString(16).padStart(2, '0') +
+    (val & 0xFF).toString(16).padStart(2, '0');
 }
 
-export interface RawComponent {
-  token: bigint;
-  weight: bigint;
-  holding: bigint;
-}
+// ── IndexToken read operations ──────────────────────────────────────
 
-export async function fetchStats(): Promise<RawStats> {
-  const buf = await contractCall(SEL.getStats);
-  return {
-    nextBasketId: safeReadU256(buf, 0),
-    platformFeeBps: safeReadU256(buf, 32),
-  };
-}
-
-export async function fetchBasketInfo(basketId: bigint): Promise<{
-  creator: bigint;
-  compCount: bigint;
-  totalShares: bigint;
-  totalMoto: bigint;
-  perfFeeBps: bigint;
-  createdAt: bigint;
-  lockState: bigint;
-  active: bigint;
-  investorCount: bigint;
-  shareToken: bigint;
-}> {
-  const buf = await contractCall(SEL.getBasketInfo + encodeU256(basketId));
-  return {
-    creator: safeReadU256(buf, 0),
-    compCount: safeReadU256(buf, 32),
-    totalShares: safeReadU256(buf, 64),
-    totalMoto: safeReadU256(buf, 96),
-    perfFeeBps: safeReadU256(buf, 128),
-    createdAt: safeReadU256(buf, 160),
-    lockState: safeReadU256(buf, 192),
-    active: safeReadU256(buf, 224),
-    investorCount: safeReadU256(buf, 256),
-    shareToken: safeReadU256(buf, 288),
-  };
-}
-
-export async function fetchBasketName(basketId: bigint): Promise<string> {
+/** Fetch component count for an IndexToken contract */
+export async function fetchComponentCount(contractAddress: string): Promise<number> {
   try {
-    const buf = await contractCall(SEL.getBasketName + encodeU256(basketId));
-    if (buf.length < 96) return 'Unnamed';
-    const word1 = safeReadU256(buf, 0);
-    const word2 = safeReadU256(buf, 32);
-    const nameLen = Number(safeReadU256(buf, 64));
-
-    if (nameLen === 0 || nameLen > 64) return 'Unnamed';
-
-    const bytes = new Uint8Array(64);
-    for (let i = 0; i < 32; i++) {
-      bytes[i] = Number((word1 >> BigInt(i * 8)) & 0xFFn);
-    }
-    for (let i = 0; i < 32; i++) {
-      bytes[32 + i] = Number((word2 >> BigInt(i * 8)) & 0xFFn);
-    }
-    return new TextDecoder().decode(bytes.slice(0, nameLen));
+    const buf = await contractCall(INDEX_SEL.getComponentCount, contractAddress);
+    return Number(safeReadU256(buf, 0));
   } catch {
-    return 'Unnamed';
+    return 0;
   }
 }
 
-export async function fetchBasketNAV(basketId: bigint): Promise<bigint> {
+/** Fetch component (address + weight) at index for an IndexToken contract */
+export async function fetchComponent(contractAddress: string, index: number): Promise<{
+  tokenAddress: string;
+  weight: bigint;
+}> {
+  const buf = await contractCall(
+    INDEX_SEL.getComponent + encodeU256(BigInt(index)),
+    contractAddress,
+  );
+  // First 32 bytes = address as u256 (needs byte reversal)
+  const tokenU256 = safeReadU256(buf, 0);
+  return {
+    tokenAddress: u256ToAddress(tokenU256),
+    weight: safeReadU256(buf, 32),
+  };
+}
+
+/** Fetch contract's holding of component at index */
+export async function fetchHolding(contractAddress: string, index: number): Promise<bigint> {
   try {
-    const buf = await contractCall(SEL.getBasketNAV + encodeU256(basketId));
+    const buf = await contractCall(
+      INDEX_SEL.getHolding + encodeU256(BigInt(index)),
+      contractAddress,
+    );
     return safeReadU256(buf, 0);
   } catch {
     return 0n;
   }
 }
 
-export async function fetchComponent(basketId: bigint, index: bigint): Promise<RawComponent> {
-  const buf = await contractCall(
-    SEL.getComponent + encodeU256(basketId) + encodeU256(index),
-  );
-  return {
-    token: safeReadU256(buf, 0),
-    weight: safeReadU256(buf, 32),
-    holding: safeReadU256(buf, 64),
-  };
-}
+// ── OP20 read operations ────────────────────────────────────────────
 
-/**
- * Encode a canonical 0x-prefixed address as a calldata parameter.
- * The SDK's writeAddress() writes the raw Address bytes (SHA256 hash) in order.
- * No byte reversal — the AS runtime's readAddress() reads raw bytes and creates
- * the Address directly. (Reversal is only needed when decoding u256-stored
- * addresses from contract RESPONSES, which u256ToAddress handles.)
- */
-function encodeAddressParam(address: string): string {
-  return address.replace(/^0x/, '').toLowerCase().padStart(64, '0');
-}
-
-export interface RawInvestorPosition {
-  shares: bigint;
-  costBasis: bigint;
-}
-
-/** Fetch OP20 token balance for an address */
+/** Fetch OP20 token balance */
 export async function fetchBalanceOf(tokenAddress: string, ownerAddress: string): Promise<bigint> {
   try {
     const buf = await contractCall(
@@ -230,12 +161,12 @@ export async function fetchBalanceOf(tokenAddress: string, ownerAddress: string)
   }
 }
 
-/** Fetch MOTO token balance for an address */
+/** Fetch MOTO balance */
 export async function fetchMotoBalance(ownerAddress: string): Promise<bigint> {
   return fetchBalanceOf(MOTO_TOKEN_ADDRESS, ownerAddress);
 }
 
-/** Fetch OP20 allowance: how much `spender` can spend of `owner`'s tokens */
+/** Fetch OP20 allowance */
 export async function fetchAllowance(tokenAddress: string, ownerAddress: string, spenderAddress: string): Promise<bigint> {
   try {
     const buf = await contractCall(
@@ -248,44 +179,35 @@ export async function fetchAllowance(tokenAddress: string, ownerAddress: string,
   }
 }
 
-/** Fetch investor position for a basket */
-export async function fetchInvestorPosition(basketId: bigint, investorAddress: string): Promise<RawInvestorPosition> {
+/** Fetch OP20 total supply */
+export async function fetchTotalSupply(tokenAddress: string): Promise<bigint> {
   try {
-    const buf = await contractCall(
-      SEL.getInvestorPosition + encodeU256(basketId) + encodeAddressParam(investorAddress),
-    );
-    return {
-      shares: safeReadU256(buf, 0),
-      costBasis: safeReadU256(buf, 32),
-    };
+    const buf = await contractCall(OP20_SEL.totalSupply, tokenAddress);
+    return safeReadU256(buf, 0);
   } catch {
-    return { shares: 0n, costBasis: 0n };
+    return 0n;
   }
 }
 
+// ── Simulation ──────────────────────────────────────────────────────
+
 /**
- * Run a raw contract simulation and return the decoded revert message if any.
- * Returns null if the simulation succeeded (no revert).
- * This bypasses the opnet SDK's response parsing, which can throw buffer errors
- * instead of surfacing the actual revert reason.
- *
- * btc_call params: [contractAddress, calldata, from, fromLegacy, height, simulatedTransaction, accessList]
+ * Pre-flight simulation — catch reverts BEFORE SDK call.
+ * Returns null on success, error message on revert.
  */
 export async function simulateAndGetRevert(
   contractAddress: string,
   calldata: string,
   from?: string,
   fromLegacy?: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  opts?: { simulatedTransaction?: any; accessList?: any },
 ): Promise<string | null> {
   try {
     const params: unknown[] = [contractAddress, calldata];
-    params.push(from ?? undefined);       // from
-    params.push(fromLegacy ?? undefined);  // fromLegacy
-    params.push(undefined);               // height
-    params.push(opts?.simulatedTransaction ?? undefined);  // simulatedTransaction
-    params.push(opts?.accessList ?? undefined);            // accessList
+    params.push(from ?? undefined);
+    params.push(fromLegacy ?? undefined);
+    params.push(undefined); // height
+    params.push(undefined); // simulatedTransaction
+    params.push(undefined); // accessList
 
     const result = await rpcCall('btc_call', params) as {
       result?: string;
@@ -298,78 +220,63 @@ export async function simulateAndGetRevert(
         const binary = atob(result.revert);
         const buf = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i++) buf[i] = binary.charCodeAt(i);
-        // OPNet revert format: 4-byte selector + 4-byte padding + UTF-8 message
         if (buf.length > 8) {
-          const msgBytes = buf.slice(8);
-          return new TextDecoder().decode(msgBytes);
+          return new TextDecoder().decode(buf.slice(8));
         }
         return `Revert: ${result.revert}`;
       } catch {
         return `Revert: ${result.revert}`;
       }
     }
-    // Detect VM crash (env_abort): result is 1-byte 0x00 with no revert message.
-    // A successful contract call returns at least 32 bytes (u256). A 1-byte 0x00
-    // with empty revert indicates the WASM runtime crashed (assertion/buffer error).
     if (result.result) {
       try {
         const resBinary = atob(result.result);
         if (resBinary.length <= 1) {
-          return 'Contract execution crashed (VM abort). The contract may need to be recompiled and redeployed with the latest runtime.';
+          return 'Contract execution crashed (VM abort). May need recompilation.';
         }
-      } catch { /* ignore decode errors */ }
+      } catch { /* ignore */ }
     }
-
-    // No revert — simulation succeeded
     return null;
   } catch (err) {
     return (err as Error).message;
   }
 }
 
+// ── MotoSwap Router ─────────────────────────────────────────────────
 
 /**
- * Encode a u16 value as a 2-byte big-endian hex string.
- * OPNet's binary encoding uses u16 BE for array lengths in calldata.
+ * Check which tokens have LP pools on MotoSwap.
+ * Returns addresses that do NOT have pools.
  */
-function encodeU16BE(val: number): string {
-  return ((val >> 8) & 0xFF).toString(16).padStart(2, '0') +
-    (val & 0xFF).toString(16).padStart(2, '0');
-}
-
-/**
- * Check which component tokens have LP pools on MotoSwap.
- * Calls Router.getAmountsOut(1 MOTO, [MOTO, TOKEN]) for each token.
- * Returns the list of token addresses (canonical 0x hex) that do NOT have pools.
- */
-export async function checkMissingPools(componentTokens: bigint[]): Promise<string[]> {
-  if (!MOTOSWAP_ROUTER_ADDRESS) return [];
+export async function checkMissingPools(
+  routerAddress: string,
+  componentAddresses: string[],
+): Promise<string[]> {
+  if (!routerAddress) return [];
   const motoHex = MOTO_TOKEN_ADDRESS.replace(/^0x/, '').toLowerCase();
-  const testAmount = encodeU256(1000000000000000000n); // 1 MOTO (10^18)
-  // Array length is u16 BE (2 bytes), NOT u256 (32 bytes)
+  const testAmount = encodeU256(1000000000000000000n);
   const pathLen = encodeU16BE(2);
 
   const missing: string[] = [];
-  for (const tokenU256 of componentTokens) {
-    const tokenAddr = u256ToAddress(tokenU256);
-    const tokenHex = tokenAddr.replace(/^0x/, '').toLowerCase();
+  for (const addr of componentAddresses) {
+    const tokenHex = addr.replace(/^0x/, '').toLowerCase();
     const calldata = ROUTER_SEL.getAmountsOut + testAmount + pathLen + motoHex + tokenHex;
     try {
-      const result = await rpcCall('btc_call', [MOTOSWAP_ROUTER_ADDRESS, calldata]) as {
+      const result = await rpcCall('btc_call', [routerAddress, calldata]) as {
         result?: string;
         revert?: string;
       };
       if (result.revert) {
-        missing.push(tokenAddr);
+        missing.push(addr);
       }
     } catch {
-      missing.push(tokenAddr);
+      missing.push(addr);
     }
   }
   return missing;
 }
 
-// ── Transaction Receipt ──────────────────────────────────────────────
+// ── Transaction Receipt ─────────────────────────────────────────────
 
 export interface TxReceipt {
   hash: string;
@@ -378,10 +285,6 @@ export interface TxReceipt {
   revert: string;
 }
 
-/**
- * Fetch a transaction receipt by hash.
- * Returns null if the TX hasn't been mined yet.
- */
 export async function fetchTransactionReceipt(txHash: string): Promise<TxReceipt | null> {
   try {
     const result = await rpcCall('btc_getTransactionReceipt', [txHash]) as {
@@ -398,7 +301,6 @@ export async function fetchTransactionReceipt(txHash: string): Promise<TxReceipt
 
     if (!result) return null;
 
-    // The RPC may return the receipt at the top level or nested
     const receipt = result.receipt ?? result;
     if (!receipt) return null;
 
@@ -413,33 +315,6 @@ export async function fetchTransactionReceipt(txHash: string): Promise<TxReceipt
       revert,
     };
   } catch {
-    // TX not found or RPC error — treat as not yet mined
     return null;
   }
-}
-
-/** Fetch everything for all baskets */
-export async function fetchAllBaskets(): Promise<{ stats: RawStats; baskets: RawBasket[] }> {
-  const stats = await fetchStats();
-  const baskets: RawBasket[] = [];
-
-  for (let id = 1n; id < stats.nextBasketId; id++) {
-    try {
-      const [info, name, nav] = await Promise.all([
-        fetchBasketInfo(id),
-        fetchBasketName(id),
-        fetchBasketNAV(id),
-      ]);
-      baskets.push({
-        basketId: id,
-        name,
-        ...info,
-        nav,
-      });
-    } catch (err) {
-      console.error(`[rawRpc] Failed to fetch basket ${id}:`, err);
-    }
-  }
-
-  return { stats, baskets };
 }

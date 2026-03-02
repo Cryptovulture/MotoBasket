@@ -1,0 +1,98 @@
+{
+    "functions": [
+        {
+            "name": "invest",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [
+                {
+                    "name": "motoAmount",
+                    "type": "UINT256"
+                },
+                {
+                    "name": "minSharesOut",
+                    "type": "UINT256"
+                }
+            ],
+            "outputs": [
+                {
+                    "name": "shares",
+                    "type": "UINT256"
+                }
+            ]
+        },
+        {
+            "name": "redeem",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [
+                {
+                    "name": "shareAmount",
+                    "type": "UINT256"
+                }
+            ],
+            "outputs": [
+                {
+                    "name": "success",
+                    "type": "BOOL"
+                }
+            ]
+        },
+        {
+            "name": "getComponentCount",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "count",
+                    "type": "UINT256"
+                }
+            ]
+        },
+        {
+            "name": "getComponent",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [
+                {
+                    "name": "index",
+                    "type": "UINT256"
+                }
+            ],
+            "outputs": [
+                {
+                    "name": "token",
+                    "type": "ADDRESS"
+                },
+                {
+                    "name": "weight",
+                    "type": "UINT256"
+                }
+            ]
+        },
+        {
+            "name": "getHolding",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [
+                {
+                    "name": "index",
+                    "type": "UINT256"
+                }
+            ],
+            "outputs": [
+                {
+                    "name": "amount",
+                    "type": "UINT256"
+                }
+            ]
+        }
+    ],
+    "events": []
+}

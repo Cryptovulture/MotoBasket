@@ -1,9 +1,9 @@
 /**
  * Shared TX history types, helpers, and localStorage persistence.
- * Used by IndexDetailPage (per-basket) and HistoryPage (all baskets).
+ * Used by IndexDetailPage (per-index) and PortfolioPage.
  */
 
-import { BASKET_DISPLAY_NAMES } from '../config/contracts';
+import { INDEX_CONFIGS } from '../config/indexes';
 import { fetchTransactionReceipt } from './rawRpc';
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -12,12 +12,12 @@ export type TxStatus = 'pending' | 'confirmed' | 'reverted';
 
 export interface TrackedTx {
   txId: string;
-  type: 'invest' | 'withdraw' | 'rebalance' | 'fee';
+  type: 'invest' | 'withdraw';
   amount: string;
   timestamp: number;
   status: TxStatus;
-  /** basketId string — set when loading across all baskets */
-  basketId?: string;
+  /** index key (contract address or symbol) — set when loading across all indexes */
+  indexKey?: string;
   /** Revert reason from receipt, if available */
   revertReason?: string;
 }
@@ -26,13 +26,13 @@ export interface TrackedTx {
 
 const LS_PREFIX = 'motobasket_txhist_';
 
-export function lsKey(basketId: bigint): string {
-  return `${LS_PREFIX}${basketId}`;
+export function lsKey(key: string): string {
+  return `${LS_PREFIX}${key}`;
 }
 
-export function loadTxHistory(basketId: bigint): TrackedTx[] {
+export function loadTxHistory(key: string): TrackedTx[] {
   try {
-    const raw = localStorage.getItem(lsKey(basketId));
+    const raw = localStorage.getItem(lsKey(key));
     if (!raw) return [];
     return JSON.parse(raw) as TrackedTx[];
   } catch {
@@ -40,26 +40,26 @@ export function loadTxHistory(basketId: bigint): TrackedTx[] {
   }
 }
 
-export function saveTxHistory(basketId: bigint, txs: TrackedTx[]) {
+export function saveTxHistory(key: string, txs: TrackedTx[]) {
   try {
     // Keep last 20
-    localStorage.setItem(lsKey(basketId), JSON.stringify(txs.slice(0, 20)));
+    localStorage.setItem(lsKey(key), JSON.stringify(txs.slice(0, 20)));
   } catch { /* quota exceeded */ }
 }
 
-/** Scan all localStorage keys to merge TX history across all baskets */
+/** Scan all localStorage keys to merge TX history across all indexes */
 export function loadAllTxHistory(): TrackedTx[] {
   const all: TrackedTx[] = [];
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
     if (!key || !key.startsWith(LS_PREFIX)) continue;
-    const basketId = key.slice(LS_PREFIX.length);
+    const indexKey = key.slice(LS_PREFIX.length);
     try {
       const raw = localStorage.getItem(key);
       if (!raw) continue;
       const txs = JSON.parse(raw) as TrackedTx[];
       for (const tx of txs) {
-        all.push({ ...tx, basketId });
+        all.push({ ...tx, indexKey });
       }
     } catch { /* skip malformed */ }
   }
@@ -97,13 +97,14 @@ export function txTypeLabel(type: TrackedTx['type']): string {
   switch (type) {
     case 'invest': return 'Buy';
     case 'withdraw': return 'Sell';
-    case 'rebalance': return 'Rebalance';
-    case 'fee': return 'Fee';
   }
 }
 
-export function basketName(basketId: string): string {
-  return BASKET_DISPLAY_NAMES[basketId] || `Index #${basketId}`;
+export function indexName(key: string): string {
+  const config = INDEX_CONFIGS.find(
+    c => c.address === key || c.symbol === key,
+  );
+  return config?.symbol ?? key.slice(0, 10) + '...';
 }
 
 /** Human-readable relative time, e.g. "3m ago", "2h ago" */

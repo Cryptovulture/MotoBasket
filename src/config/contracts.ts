@@ -8,28 +8,17 @@ export const NETWORK: Network = networks.opnetTestnet;
 export const RPC_URL = 'https://testnet.opnet.org';
 
 // ============================================================================
-// DEPLOYED CONTRACT ADDRESSES (Testnet)
+// CORE CONTRACT ADDRESSES (Testnet)
 // ============================================================================
-
-// Core protocol contracts
-export const EXPERT_INDEX_ADDRESS = '0xd66e95bbf08d4ec09983cac57cd6d6d85967cb5a134008e51fdb74b0f70f1364';
-export const BATCH_ROUTER_ADDRESS = '0x00776fb7580f41ec6d53da28480500384e7ad28dd164c938d4aa0695bd47f188';
 
 // MOTO token — base currency for investments
 export const MOTO_TOKEN_ADDRESS = '0xfd4473840751d58d9f8b73bdd57d6c5260453d5518bd7cd02d0a4cf3df9bf4dd';
 
 // MotoSwap DEX (testnet)
 export const MOTOSWAP_ROUTER_ADDRESS = '0x0e6ff1f2d7db7556cb37729e3738f4dae82659b984b2621fab08e1111b1b937a';
-export const MOTOSWAP_FACTORY_ADDRESS = '';
 
-// Legacy — not used on testnet (base token is MOTO directly)
-export const BASKET_TOKEN_ADDRESS = '';
-
-export const BASKET_DECIMALS = 8;
 export const MOTO_DECIMALS = 18;
-
-export const INDEX_BASE_TOKEN = MOTO_TOKEN_ADDRESS;
-export const INDEX_BASE_DECIMALS = MOTO_DECIMALS;
+export const INDEX_DECIMALS = 18;
 
 // OPNet block explorer
 export const EXPLORER_TX_URL = 'https://mempool.opnet.org/tx/';
@@ -37,15 +26,14 @@ export const EXPLORER_TX_URL = 'https://mempool.opnet.org/tx/';
 // App configuration
 export const CONFIG = {
   appName: 'MotoBasket',
-  appTagline: 'Invest in Bitcoin Like a Pro',
-  platformFee: 0.0095,
+  appTagline: 'Diversified Index Investing on Bitcoin L1',
+  platformFee: 0,
 };
 
 // ============================================================================
 // ALL TOKEN ADDRESSES (from testnet-deployed-addresses.json)
 // ============================================================================
 
-// Known token metadata (testnet) — all deployed tokens with LP pools
 export const TOKEN_META: Record<string, { symbol: string; name: string; decimals: number }> = {
   // Base
   [MOTO_TOKEN_ADDRESS]: { symbol: 'MOTO', name: 'Motoswap', decimals: 18 },
@@ -77,55 +65,4 @@ export const TOKEN_META: Record<string, { symbol: string; name: string; decimals
   '0x3f8661627f0d0570f5a3c51be4b80e6e3b5e3e71e1f8f8faa567645987345c27': { symbol: 'APPL', name: 'Apple Token', decimals: 18 },
   '0x1694edcd0df9053bb9fe8b1ccef3057451a08426e888acb9cf2fe9306f0f46fd': { symbol: 'AVDO', name: 'Avocado', decimals: 18 },
   '0x3ca2249304ce3ac49c8cadc633f3cc5e02896fc46d30ab44fb91d974ed18f9c1': { symbol: 'BERY', name: 'Berry Finance', decimals: 18 },
-};
-
-// Display names for on-chain baskets (basketId -> friendly name)
-// Verified against on-chain ExpertIndex v2 contract 2026-03-01
-export const BASKET_DISPLAY_NAMES: Record<string, string> = {
-  '1': 'Meme Token Index',
-  '2': 'NEBL-CPHR-VRTX Index',
-  '3': 'Bitcoin DeFi Index',
-  '4': 'CPHR-VRTX 50/50',
-  '5': "Chad's BTC Maxi Basket",
-  '6': "Danny's Alpha Picks",
-  '7': 'Meme Token Index',
-  '8': 'Bitcoin DeFi Index',
-  '9': "Danny's Alpha Picks",
-  '10': "Chad's BTC Maxi Basket",
-  '11': 'Artificial Intelligence Index',
-  '12': 'Meme Token Index',
-};
-
-// Expert metadata for baskets managed by KOLs
-// Mapped to correct on-chain basket IDs (verified 2026-03-01, ExpertIndex v2)
-export const EXPERT_BASKETS: Record<string, {
-  creator: string;
-  avatar: string;
-  description: string;
-  isExpert: boolean;
-}> = {
-  '5': {
-    creator: '@chad_btc',
-    avatar: '/kol-avatars/chad.png',
-    description: 'Bitcoin maximalist plays — blue chips and DeFi infrastructure',
-    isExpert: true,
-  },
-  '6': {
-    creator: '@danny_btc',
-    avatar: '/kol-avatars/danny.png',
-    description: 'High-conviction AI and DeFi plays from a top Bitcoin trader',
-    isExpert: true,
-  },
-  '9': {
-    creator: '@danny_btc',
-    avatar: '/kol-avatars/danny.png',
-    description: 'High-conviction AI and DeFi plays from a top Bitcoin trader',
-    isExpert: true,
-  },
-  '10': {
-    creator: '@chad_btc',
-    avatar: '/kol-avatars/chad.png',
-    description: 'Bitcoin maximalist plays — blue chips and DeFi infrastructure',
-    isExpert: true,
-  },
 };

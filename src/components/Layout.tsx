@@ -12,9 +12,7 @@ export default function Layout({ children }: LayoutProps) {
 
   const navigation = [
     { name: 'Indexes', href: '/' },
-    { name: 'Experts', href: '/expert' },
     { name: 'Portfolio', href: '/portfolio' },
-    { name: 'History', href: '/history' },
   ];
 
   const formatAddress = (addr: string | undefined) => {

@@ -6,8 +6,6 @@ import '../node_modules/@btc-vision/walletconnect/browser/walletconnect.css';
 import HomePage from './pages/HomePage';
 import IndexDetailPage from './pages/IndexDetailPage';
 import PortfolioPage from './pages/PortfolioPage';
-import HistoryPage from './pages/HistoryPage';
-import ExpertDashboard from './pages/KOLDashboard';
 import Layout from './components/Layout';
 import { WalletContext } from './hooks/useWallet';
 import './index.css';
@@ -108,8 +106,6 @@ function AppRoutes() {
           <Route path="/" element={<HomePage />} />
           <Route path="/index/:address" element={<IndexDetailPage />} />
           <Route path="/portfolio" element={<PortfolioPage />} />
-          <Route path="/history" element={<HistoryPage />} />
-          <Route path="/expert" element={<ExpertDashboard />} />
         </Routes>
       </Layout>
     </HashRouter>

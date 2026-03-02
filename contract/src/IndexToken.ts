@@ -24,8 +24,8 @@ const WEIGHT_BASIS: u256 = u256.fromU32(10000);
 // Default minimum investment: 10 MOTO (18 decimals)
 const DEFAULT_MIN_INVESTMENT: u256 = u256.fromString('10000000000000000000');
 
-// AMM constants (Uniswap V2: 0.3% fee)
-const FEE_NUMERATOR: u256 = u256.fromU32(997);
+// AMM constants (MotoSwap: 0.5% fee — 0.3% LP + 0.2% protocol)
+const FEE_NUMERATOR: u256 = u256.fromU32(995);
 const FEE_DENOMINATOR: u256 = u256.fromU32(1000);
 
 // Selectors for cross-contract calls (SHA256-based, full signature)

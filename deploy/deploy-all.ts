@@ -166,7 +166,7 @@ async function waitForConfirmation(hexAddr: string, maxAttempts = 40): Promise<b
 
 async function main() {
   console.log('\n========================================');
-  console.log('  MotoBasket V8 — Deploy All Indexes');
+  console.log('  MotoBasket V10 — Deploy All Indexes (fee fix)');
   console.log('========================================\n');
 
   const { signer, mldsaSigner, p2tr } = deriveWallet();

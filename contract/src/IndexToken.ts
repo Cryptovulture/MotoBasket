@@ -24,8 +24,8 @@ const WEIGHT_BASIS: u256 = u256.fromU32(10000);
 // Default minimum investment: 10 MOTO (18 decimals)
 const DEFAULT_MIN_INVESTMENT: u256 = u256.fromString('10000000000000000000');
 
-// AMM constants (MotoSwap: 0.5% fee — 0.3% LP + 0.2% protocol)
-const FEE_NUMERATOR: u256 = u256.fromU32(995);
+// AMM constants (MotoSwap pool: 0.3% fee, standard Uniswap V2)
+const FEE_NUMERATOR: u256 = u256.fromU32(997);
 const FEE_DENOMINATOR: u256 = u256.fromU32(1000);
 
 // Selectors for cross-contract calls (SHA256-based, full signature)
@@ -34,6 +34,7 @@ const SEL_TRANSFER_FROM: Selector = encodeSelector('transferFrom(address,address
 const SEL_BALANCE_OF: Selector = encodeSelector('balanceOf(address)');
 const SEL_GET_RESERVES: Selector = encodeSelector('getReserves()');
 const SEL_PAIR_SWAP: Selector = encodeSelector('swap(uint256,uint256,address,bytes)');
+const SEL_TOKEN0: Selector = encodeSelector('token0()');
 
 @final
 export class IndexToken extends OP20 {
@@ -337,7 +338,19 @@ export class IndexToken extends OP20 {
         tokenOut: Address,
         pairAddr: Address,
     ): void {
-        // 1. Get reserves from pair
+        // 1. Query token0 from the pair directly (don't rely on Address comparison)
+        const t0Writer: BytesWriter = new BytesWriter(4);
+        t0Writer.writeSelector(SEL_TOKEN0);
+        const t0Result = Blockchain.call(pairAddr, t0Writer, true);
+
+        if (t0Result.data.byteLength < 32) {
+            throw new Revert('token0: response too short');
+        }
+
+        const pairToken0: Address = t0Result.data.readAddress();
+        const tokenInIsToken0: bool = tokenIn.equals(pairToken0);
+
+        // 2. Get reserves from pair
         const resWriter: BytesWriter = new BytesWriter(4);
         resWriter.writeSelector(SEL_GET_RESERVES);
         const resResult = Blockchain.call(pairAddr, resWriter, true);
@@ -348,10 +361,6 @@ export class IndexToken extends OP20 {
 
         const reserve0: u256 = resResult.data.readU256();
         const reserve1: u256 = resResult.data.readU256();
-
-        // 2. Determine token ordering (token0 = smaller address, Uniswap V2 convention)
-        // Address class has operator< overload (big-endian byte comparison)
-        const tokenInIsToken0: bool = tokenIn < tokenOut;
 
         let reserveIn: u256;
         let reserveOut: u256;

@@ -49,7 +49,7 @@ const NEBL = '0xc70a38244ec57b52cb2c52b4d1d5d8976bd40e6c3fb95c9aca8f0291604b6e04
 
 export const INDEX_CONFIGS: IndexConfig[] = [
   {
-    address: '0x72aee102eb2228219a7b18610d6d86192c79cc5ceee8cf52c066011a3e236ec9',
+    address: '0xcb8236b813182b1c2af062f64ccd9c0175edc004e065e378591d40ed6e7ed7b8',
     name: 'OPNet AI Index',
     symbol: 'OPAI',
     category: 'ai',
@@ -63,7 +63,7 @@ export const INDEX_CONFIGS: IndexConfig[] = [
     ],
   },
   {
-    address: '0x6b2701d955ce7ba0110fb33c37e23da70f0a08b46f5a11b425d1187d79ef556c',
+    address: '0x57e209e3474dcfc962f88aea6c240193a8da1dd27ea06f51a1324f516fd8c75a',
     name: 'OPNet Meme Index',
     symbol: 'OPMEME',
     category: 'meme',
@@ -76,7 +76,7 @@ export const INDEX_CONFIGS: IndexConfig[] = [
     ],
   },
   {
-    address: '0xef90bafa2c3aeb51a0a4a0e8e0d073f30218a241091f6bbcb981117d43540c3e',
+    address: '0x1498618f7e35e05968bf89e474914372b8652bc66f171f6b7d26d5048d4dc909',
     name: 'OPNet DeFi Index',
     symbol: 'OPDEFI',
     category: 'defi',

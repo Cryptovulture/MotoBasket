@@ -19,7 +19,6 @@ import {
   fetchMotoBalance,
   fetchAllowance,
   fetchTotalSupply,
-  simulateAndGetRevert,
   checkMissingPools,
 } from '../utils/rawRpc';
 import type { IndexConfig } from '../config/indexes';
@@ -77,9 +76,34 @@ export function parseMotoInput(input: string): bigint {
   return parseTokenInput(input, MOTO_DECIMALS);
 }
 
+// ── Hook return type ────────────────────────────────────────────────
+
+export interface UseIndexTokenReturn {
+  components: ComponentState[];
+  totalSupply: bigint;
+  userBalance: bigint;
+  motoBalance: bigint;
+  motoAllowance: bigint;
+  loading: boolean;
+  loadingStep: string;
+  /** Current step number during invest (0 = idle, 1 = approving, 2 = investing) */
+  currentStep: number;
+  /** Total steps for current operation */
+  totalSteps: number;
+  initialLoading: boolean;
+  error: string | null;
+  /** Last successful invest TX id */
+  lastTxId: string | null;
+  invest: (motoAmount: bigint) => Promise<string | null>;
+  redeem: (shareAmount: bigint) => Promise<string | null>;
+  refresh: () => Promise<void>;
+  /** Check if MOTO allowance covers the given amount */
+  needsApproval: (amount: bigint) => boolean;
+}
+
 // ── Hook ────────────────────────────────────────────────────────────
 
-export function useIndexToken(indexConfig: IndexConfig | null) {
+export function useIndexToken(indexConfig: IndexConfig | null): UseIndexTokenReturn {
   const { provider, network } = useProvider();
   const wallet = useWallet();
 
@@ -90,16 +114,14 @@ export function useIndexToken(indexConfig: IndexConfig | null) {
   }, [wallet.senderAddressObj]);
 
   // SDK contract instances (for write operations)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const indexContract = useMemo((): any => {
+  const indexContract = useMemo((): ReturnType<typeof getContract> | null => {
     if (!contractAddress) return null;
     try {
       return getContract(hexToP2OP(contractAddress), IndexTokenAbi, provider, network, senderAddr);
     } catch { return null; }
   }, [contractAddress, provider, network, senderAddr]);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const motoContract = useMemo((): any => {
+  const motoContract = useMemo((): ReturnType<typeof getContract> | null => {
     if (!MOTO_TOKEN_ADDRESS) return null;
     try {
       return getContract(hexToP2OP(MOTO_TOKEN_ADDRESS), MotoTokenAbi, provider, network, senderAddr);
@@ -114,8 +136,11 @@ export function useIndexToken(indexConfig: IndexConfig | null) {
   const [motoAllowance, setMotoAllowance] = useState(0n);
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState('');
+  const [currentStep, setCurrentStep] = useState(0);
+  const [totalSteps, setTotalSteps] = useState(0);
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastTxId, setLastTxId] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── Data fetching ─────────────────────────────────────────────────
@@ -187,7 +212,13 @@ export function useIndexToken(indexConfig: IndexConfig | null) {
     };
   }, [contractAddress, fetchData]);
 
-  // ── TX params (frontend: signer=null) ─────────────────────────────
+  // ── Helper: check if approval needed ─────────────────────────────
+
+  const needsApproval = useCallback((amount: bigint): boolean => {
+    return motoAllowance < amount;
+  }, [motoAllowance]);
+
+  // ── TX params (frontend: signer=null, wallet signs) ──────────────
 
   const txParams = useCallback(() => ({
     signer: null,
@@ -206,6 +237,7 @@ export function useIndexToken(indexConfig: IndexConfig | null) {
     }
     setLoading(true);
     setError(null);
+    setLastTxId(null);
 
     try {
       const MIN_INVEST = 10n * (10n ** 18n);
@@ -215,12 +247,14 @@ export function useIndexToken(indexConfig: IndexConfig | null) {
       }
 
       if (motoBalance < motoAmount) {
-        setError(`Insufficient MOTO. Have ${formatMoto(motoBalance)}, need ${formatMoto(motoAmount)}.`);
+        setError(`Insufficient MOTO. Have ${formatMotoDisplay(motoBalance)}, need ${formatMotoDisplay(motoAmount)}.`);
         return null;
       }
 
-      // Check LP pools
-      setLoadingStep('Checking liquidity pools...');
+      // Check LP pools first
+      setLoadingStep('Verifying liquidity pools...');
+      setCurrentStep(0);
+      setTotalSteps(0);
       const compAddresses = components.map(c => c.address);
       const missingPools = await checkMissingPools(MOTOSWAP_ROUTER_ADDRESS, compAddresses);
       if (missingPools.length > 0) {
@@ -232,30 +266,36 @@ export function useIndexToken(indexConfig: IndexConfig | null) {
         return null;
       }
 
-      const params = txParams();
-
       // Check allowance
-      setLoadingStep('Checking allowance...');
       const currentAllowance = await fetchAllowance(
         MOTO_TOKEN_ADDRESS, wallet.senderAddress!, contractAddress,
       );
-      const needsApprove = currentAllowance < motoAmount;
+      const approvalNeeded = currentAllowance < motoAmount;
+      const steps = approvalNeeded ? 2 : 1;
+      setTotalSteps(steps);
+
+      const params = txParams();
 
       // Step 1: Approve if needed
-      if (needsApprove) {
-        setLoadingStep('Step 1/2: Approving MOTO (one-time)...');
+      if (approvalNeeded) {
+        setCurrentStep(1);
+        setLoadingStep('Approve MOTO spending in your wallet...');
+
+        // Create address for the spender param
         const indexAddr = Address.fromString(contractAddress);
-        // Unlimited approval
         const approveAmount = 2n ** 256n - 1n;
 
-        const approveSim = await motoContract.increaseAllowance(indexAddr, approveAmount);
-        if ('error' in approveSim) throw new Error(`Approval failed: ${approveSim.error}`);
+        const approveSim = await (motoContract as any).increaseAllowance(indexAddr, approveAmount);
+        if (approveSim && 'error' in approveSim) {
+          throw new Error(`Approval simulation failed: ${approveSim.error}`);
+        }
 
+        setLoadingStep('Confirm approval in your wallet...');
         await approveSim.sendTransaction(params);
 
-        // Poll until confirmed
-        setLoadingStep('Waiting for approval to confirm...');
-        const maxAttempts = 30;
+        // Poll until approval is confirmed on-chain
+        setLoadingStep('Waiting for approval confirmation...');
+        const maxAttempts = 60; // 5 minutes
         let confirmed = false;
         for (let i = 0; i < maxAttempts; i++) {
           await new Promise(resolve => setTimeout(resolve, 5000));
@@ -268,40 +308,59 @@ export function useIndexToken(indexConfig: IndexConfig | null) {
               confirmed = true;
               break;
             }
-          } catch { /* ignore */ }
-          setLoadingStep(`Waiting for approval... (${i + 1})`);
+          } catch { /* ignore polling errors */ }
+          setLoadingStep(`Waiting for approval... (${i + 1}/${maxAttempts})`);
         }
 
         if (!confirmed) {
-          setError('Approval sent but not yet confirmed. Wait and try again.');
+          setError('Approval sent but not yet confirmed on-chain. Please wait for it to confirm, then try again.');
           return null;
         }
       }
 
-      // Step 2: SDK simulate + send
-      const stepPrefix = needsApprove ? 'Step 2/2: ' : '';
-      setLoadingStep(`${stepPrefix}Purchasing ${indexConfig?.symbol ?? 'index'} tokens...`);
-      const minShares = 0n;
-      const investSim = await indexContract.invest(motoAmount, minShares);
-      if ('error' in investSim) throw new Error(`Invest failed: ${investSim.error}`);
+      // Step 2: Invest
+      setCurrentStep(steps);
+      setLoadingStep('Simulating investment...');
 
+      const minShares = 0n;
+      const investSim = await (indexContract as any).invest(motoAmount, minShares);
+      if (investSim && 'error' in investSim) {
+        throw new Error(`Invest simulation failed: ${investSim.error}`);
+      }
+
+      setLoadingStep('Confirm investment in your wallet...');
       const receipt = await investSim.sendTransaction(params);
+      const txId = receipt.transactionId || receipt.txid || receipt.hash || '';
+
+      setLastTxId(txId);
+      setLoadingStep('Investment submitted! Refreshing data...');
+
+      // Refresh balances
       await fetchData();
-      return receipt.transactionId;
+      return txId;
     } catch (err) {
       console.error('[invest] ERROR:', err);
-      const raw = (err as Error).message;
+      const raw = (err as Error).message || String(err);
+
       if (raw.includes('Legacy public key')) {
-        setError('Wallet missing legacy key. Disconnect and reconnect.');
-      } else if (raw.includes('revert') || raw.includes('Reverted')) {
-        setError(`Transaction reverted: ${raw.slice(0, 200)}`);
+        setError('Wallet missing legacy key. Disconnect and reconnect your wallet.');
+      } else if (raw.includes('User rejected') || raw.includes('user rejected') || raw.includes('denied')) {
+        setError('Transaction was rejected in wallet.');
+      } else if (raw.includes('revert') || raw.includes('Reverted') || raw.includes('REVERT')) {
+        // Extract meaningful revert reason
+        const match = raw.match(/(?:revert(?:ed)?:?\s*)(.*)/i);
+        setError(match ? `Contract reverted: ${match[1].slice(0, 200)}` : `Transaction reverted: ${raw.slice(0, 200)}`);
+      } else if (raw.includes('insufficient') || raw.includes('Insufficient')) {
+        setError('Insufficient balance or gas. Check your MOTO and BTC balances.');
       } else {
-        setError(raw.length > 200 ? raw.slice(0, 200) + '...' : raw);
+        setError(raw.length > 300 ? raw.slice(0, 300) + '...' : raw);
       }
       return null;
     } finally {
       setLoading(false);
       setLoadingStep('');
+      setCurrentStep(0);
+      setTotalSteps(0);
     }
   }, [indexContract, motoContract, wallet, contractAddress, motoBalance, components, fetchData, txParams, indexConfig]);
 
@@ -313,23 +372,43 @@ export function useIndexToken(indexConfig: IndexConfig | null) {
       return null;
     }
     setLoading(true);
-    setLoadingStep(`Redeeming ${indexConfig?.symbol ?? 'index'} tokens...`);
+    setLoadingStep('Simulating redemption...');
+    setCurrentStep(1);
+    setTotalSteps(1);
     setError(null);
+    setLastTxId(null);
     try {
-      const result = await indexContract.redeem(shareAmount);
-      if (result.revert) throw new Error(`Redeem failed: ${result.revert}`);
+      const result = await (indexContract as any).redeem(shareAmount);
+
+      // Check for simulation errors (SDK returns { error: string } on failure)
+      if (result && 'error' in result) {
+        throw new Error(`Redeem simulation failed: ${result.error}`);
+      }
+
+      setLoadingStep('Confirm redemption in your wallet...');
       const receipt = await result.sendTransaction(txParams());
+      const txId = receipt.transactionId || receipt.txid || receipt.hash || '';
+      setLastTxId(txId);
+
+      setLoadingStep('Redemption submitted! Refreshing data...');
       await fetchData();
-      return receipt.transactionId;
+      return txId;
     } catch (err) {
       console.error('[redeem]', err);
-      const raw = (err as Error).message;
-      if (raw.includes('Insufficient')) setError('Insufficient shares.');
-      else setError(raw.length > 150 ? raw.slice(0, 150) + '...' : raw);
+      const raw = (err as Error).message || String(err);
+      if (raw.includes('User rejected') || raw.includes('denied')) {
+        setError('Transaction was rejected in wallet.');
+      } else if (raw.includes('Insufficient') || raw.includes('insufficient')) {
+        setError('Insufficient shares to redeem.');
+      } else {
+        setError(raw.length > 200 ? raw.slice(0, 200) + '...' : raw);
+      }
       return null;
     } finally {
       setLoading(false);
       setLoadingStep('');
+      setCurrentStep(0);
+      setTotalSteps(0);
     }
   }, [indexContract, wallet, fetchData, txParams, indexConfig]);
 
@@ -341,10 +420,14 @@ export function useIndexToken(indexConfig: IndexConfig | null) {
     motoAllowance,
     loading,
     loadingStep,
+    currentStep,
+    totalSteps,
     initialLoading,
     error,
+    lastTxId,
     invest,
     redeem,
     refresh: fetchData,
+    needsApproval,
   };
 }

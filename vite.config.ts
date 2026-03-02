@@ -1,33 +1,35 @@
+import { resolve } from 'path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
 
 export default defineConfig({
+  base: './',
   server: {
     port: 5176,
     strictPort: true,
   },
   plugins: [
-    react(),
     nodePolyfills({
-      include: ['buffer', 'process', 'crypto'],
-      globals: {
-        Buffer: true,
-        process: true,
-      },
+      globals: { Buffer: true, global: true, process: true },
+      overrides: { crypto: 'crypto-browserify' },
     }),
+    react(),
   ],
   resolve: {
     alias: {
-      crypto: 'crypto-browserify',
-      stream: 'stream-browserify',
-      assert: 'assert',
-      http: 'stream-http',
-      https: 'https-browserify',
-      os: 'os-browserify',
-      url: 'url',
-      undici: new URL('node_modules/opnet/dist/fetch-browser.js', import.meta.url).pathname,
+      global: 'global',
+      undici: resolve(__dirname, 'node_modules/opnet/src/fetch/fetch-browser.js'),
     },
+    mainFields: ['module', 'main', 'browser'],
+    dedupe: [
+      '@noble/curves',
+      '@noble/hashes',
+      '@scure/base',
+      'buffer',
+      'react',
+      'react-dom',
+    ],
   },
   optimizeDeps: {
     exclude: ['crypto-browserify'],

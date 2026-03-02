@@ -103,8 +103,9 @@ function IndexCard({ config, i }: { config: typeof INDEX_CONFIGS[number]; i: num
 }
 
 export default function HomePage() {
+  const standard = INDEX_CONFIGS.filter(c => c.category !== 'expert');
+  const expert = INDEX_CONFIGS.filter(c => c.category === 'expert');
   const deployed = INDEX_CONFIGS.filter(c => c.address);
-  const upcoming = INDEX_CONFIGS.filter(c => !c.address);
 
   return (
     <div className="pb-20">
@@ -173,14 +174,31 @@ export default function HomePage() {
       <div id="indexes" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-12">
         <h2 className="text-2xl font-display font-bold text-white mb-6">Index Tokens</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {deployed.map((config, i) => (
+          {standard.map((config, i) => (
             <IndexCard key={config.symbol} config={config} i={i} />
-          ))}
-          {upcoming.map((config, i) => (
-            <IndexCard key={config.symbol} config={config} i={deployed.length + i} />
           ))}
         </div>
       </div>
+
+      {/* Expert Indexes */}
+      {expert.length > 0 && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-16">
+          <div className="flex items-center space-x-3 mb-6">
+            <h2 className="text-2xl font-display font-bold text-white">Expert Indexes</h2>
+            <span className="px-3 py-1 bg-gradient-to-r from-bitcoin-500 to-amber-500 text-white text-xs font-bold rounded-full">
+              KOL Curated
+            </span>
+          </div>
+          <p className="text-dark-400 text-sm mb-6 max-w-2xl">
+            Community-curated indexes built by top OPNet traders and influencers. Each expert selects their high-conviction picks with custom weightings.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {expert.map((config, i) => (
+              <IndexCard key={config.symbol} config={config} i={standard.length + i} />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

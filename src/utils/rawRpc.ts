@@ -75,16 +75,11 @@ async function contractCall(calldata: string, contractAddress: string): Promise<
 }
 
 /**
- * OPNet stores addresses as u256 using little-endian u256.fromBytes().
- * When read as a bigint, the bytes are reversed vs the canonical hex.
+ * Read a u256 value as a 0x-prefixed hex address.
+ * NO byte reversal — OPNet btc_call returns raw hex bytes directly.
  */
 export function u256ToAddress(val: bigint): string {
-  const hex = val.toString(16).padStart(64, '0');
-  const bytes: string[] = [];
-  for (let i = 0; i < 64; i += 2) {
-    bytes.push(hex.slice(i, i + 2));
-  }
-  return '0x' + bytes.reverse().join('');
+  return '0x' + val.toString(16).padStart(64, '0');
 }
 
 /**
@@ -125,7 +120,7 @@ export async function fetchComponent(contractAddress: string, index: number): Pr
     INDEX_SEL.getComponent + encodeU256(BigInt(index)),
     contractAddress,
   );
-  // First 32 bytes = address as u256 (needs byte reversal)
+  // First 32 bytes = address as u256 (raw hex, no reversal)
   const tokenU256 = safeReadU256(buf, 0);
   return {
     tokenAddress: u256ToAddress(tokenU256),

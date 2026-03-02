@@ -11,7 +11,7 @@ export interface IndexConfig {
   address: string; // deployed contract address (will be filled after deployment)
   name: string;
   symbol: string;
-  category: 'ai' | 'meme' | 'defi';
+  category: 'ai' | 'meme' | 'defi' | 'expert';
   description: string;
   components: IndexComponent[];
 }
@@ -49,7 +49,7 @@ const NEBL = '0xc70a38244ec57b52cb2c52b4d1d5d8976bd40e6c3fb95c9aca8f0291604b6e04
 
 export const INDEX_CONFIGS: IndexConfig[] = [
   {
-    address: '0xe2aad9cfc8878fe3ad5105026f3b4619c7ff07c8c13ef1e9398bbf2229d2e4f7',
+    address: '0xe02fab3e3fa8681132edb95a9666bb1588e5c6b8805ea9045e99ed6372d1db9a',
     name: 'OPNet AI Index',
     symbol: 'OPAI',
     category: 'ai',
@@ -63,7 +63,7 @@ export const INDEX_CONFIGS: IndexConfig[] = [
     ],
   },
   {
-    address: '0x104ec804d48280051a81848ced6b17728af6be701f0251f4aed4bfd49d033c2e',
+    address: '0x8e7d1b482bdbb04a21386ad7d85df6ec5e07680787fcc3f56b77416868d898ad',
     name: 'OPNet Meme Index',
     symbol: 'OPMEME',
     category: 'meme',
@@ -76,7 +76,7 @@ export const INDEX_CONFIGS: IndexConfig[] = [
     ],
   },
   {
-    address: '0xbe33f93ff068eccc623440c7b6dc52039a38de50745fee11d4b1b208f4c868c1',
+    address: '0x3aee1f145937e07a3da789d0ec160d2caab320eb5149948c772167a4d7566fa3',
     name: 'OPNet DeFi Index',
     symbol: 'OPDEFI',
     category: 'defi',
@@ -88,6 +88,20 @@ export const INDEX_CONFIGS: IndexConfig[] = [
       comp(NEBL, 2500),
     ],
   },
+  // ── Expert Indexes ─────────────────────────────────────────────────
+  {
+    address: '', // deploy contract, then fill
+    name: 'OpDanny Alpha Index',
+    symbol: 'DANNY',
+    category: 'expert',
+    description: 'OpDanny\'s curated high-conviction picks across AI, DeFi, and meme sectors',
+    components: [
+      comp(NRNA, 3000),  // AI — top pick
+      comp(DGEN, 2500),  // Meme
+      comp(YLDP, 2500),  // DeFi
+      comp(CPHR, 2000),  // AI
+    ],
+  },
 ];
 
 // Category display metadata
@@ -95,4 +109,5 @@ export const CATEGORY_META: Record<string, { label: string; gradient: string }> 
   ai: { label: 'AI', gradient: 'from-violet-500 to-purple-600' },
   meme: { label: 'Meme', gradient: 'from-yellow-500 to-orange-500' },
   defi: { label: 'DeFi', gradient: 'from-teal-500 to-cyan-500' },
+  expert: { label: 'Expert', gradient: 'from-bitcoin-500 to-amber-500' },
 };

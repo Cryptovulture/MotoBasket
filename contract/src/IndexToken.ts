@@ -391,13 +391,13 @@ export class IndexToken extends OP20 {
             amount1Out = u256.Zero;
         }
 
-        // swap(uint256,uint256,address,bytes) — 4 + 32 + 32 + 32 + 2 = 102
-        const swapWriter: BytesWriter = new BytesWriter(102);
+        // swap(uint256,uint256,address,bytes) — 4 + 32 + 32 + 32 + 4 = 104
+        const swapWriter: BytesWriter = new BytesWriter(104);
         swapWriter.writeSelector(SEL_PAIR_SWAP);
         swapWriter.writeU256(amount0Out);
         swapWriter.writeU256(amount1Out);
         swapWriter.writeAddress(Blockchain.contractAddress);
-        swapWriter.writeU16(0); // empty bytes (no flash swap)
+        swapWriter.writeU32(0); // empty bytes length (u32, matches readBytesWithLength)
 
         Blockchain.call(pairAddr, swapWriter, true);
     }

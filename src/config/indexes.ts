@@ -1,113 +1,188 @@
-import { TOKEN_META } from './contracts';
+import { ADDR } from './tokens';
+
+export type IndexCategory = 'ai' | 'meme' | 'defi' | 'gaming' | 'infra' | 'expert';
 
 export interface IndexComponent {
   address: string;
-  symbol: string;
-  name: string;
   weightBps: number; // basis points, sum to 10000
 }
 
 export interface IndexConfig {
-  address: string; // deployed contract address (will be filled after deployment)
+  address: string; // deployed contract address (empty = not yet deployed)
   name: string;
   symbol: string;
-  category: 'ai' | 'meme' | 'defi' | 'expert';
+  category: IndexCategory;
   description: string;
+  curatorSlug?: string; // links to expert profile
   components: IndexComponent[];
 }
 
-// Helper to build a component from TOKEN_META
-function comp(address: string, weightBps: number): IndexComponent {
-  const meta = TOKEN_META[address];
-  return {
-    address,
-    symbol: meta?.symbol ?? '???',
-    name: meta?.name ?? 'Unknown',
-    weightBps,
-  };
-}
+// ── Category Indexes (5) ─────────────────────────────────────────────────
 
-// ── Token addresses from contracts.ts ───────────────────────────────
-const NRNA = '0xaaf45d2ce96330c48a86f6e45d1f666d38f84c39c3cbb0db379ce806a91ed86f';
-const SYNP = '0x8065620da70e8b7d8b0aa2a896fa18906586a944e668232d5ecafa86d921d16c';
-const CRTX = '0xf624187e93ae18b6d83dd9e68c41670205de6c144b447ec81e40b64865d48b8c';
-const DPLR = '0x5a7b2df0a29c92baae7d8a4209f4949190882f56722f690b75a14083d53b4df7';
-const CPHR = '0x47a65def2d5a80332f1a40b3af90d8c8973fd5cb604d458d7eb1714614cb8940';
-
-const PEEP = '0x2495973eca6972620d9565e4236bd966d8723fb36911c0e3e84bc6ef6201c2d6';
-const DGEN = '0x24550d41f446261c3091fb2dad64a62f9065398650e238e2338a22b3bd7a2e22';
-const BONQ = '0x07ec6eb7dd1c071053d390053ea60dfad0a39dc86f84bbd5ba95d7d858789258';
-const SHBA = '0x274cca66f076864b97a29e1001275c69d48eaad9c4eda460f58914e005f8f383';
-
-const LNDB = '0xb3640fd16d44469af46ec74097917d3cf16feb28715b8cd8304ce09245d66c18';
-const YLDP = '0x7cadb62baf8d683e04adb3830ae2d273ebe2748df1b68a7d7320d6110050111b';
-const SWPX = '0x589239855469f983c69a31820cd0472eb4f10e585ff215926533dd650a779f46';
-const NEBL = '0xc70a38244ec57b52cb2c52b4d1d5d8976bd40e6c3fb95c9aca8f0291604b6e04';
-
-// ── Index Configurations ────────────────────────────────────────────
-// Addresses will be populated after testnet deployment
-
-export const INDEX_CONFIGS: IndexConfig[] = [
+export const CATEGORY_INDEXES: IndexConfig[] = [
   {
-    address: '0xcb8236b813182b1c2af062f64ccd9c0175edc004e065e378591d40ed6e7ed7b8',
+    address: '0x725f25c622f943b50e5f53bb774863a4ad4611ffbbeb3ffc9501c796d7966721',
     name: 'OPNet AI Index',
     symbol: 'OPAI',
     category: 'ai',
     description: 'Top AI infrastructure and compute tokens on Bitcoin L1',
     components: [
-      comp(NRNA, 2000),
-      comp(SYNP, 2000),
-      comp(CRTX, 2000),
-      comp(DPLR, 2000),
-      comp(CPHR, 2000),
+      { address: ADDR.NRNA, weightBps: 2000 },
+      { address: ADDR.SYNP, weightBps: 2000 },
+      { address: ADDR.CRTX, weightBps: 2000 },
+      { address: ADDR.DPLR, weightBps: 2000 },
+      { address: ADDR.CPHR, weightBps: 2000 },
     ],
   },
   {
-    address: '0x57e209e3474dcfc962f88aea6c240193a8da1dd27ea06f51a1324f516fd8c75a',
+    address: '0xa392f205c01a793c4f35a1ff4b2f45963564280de199ab3b769975d99fc1fe8f',
     name: 'OPNet Meme Index',
     symbol: 'OPMEME',
     category: 'meme',
     description: 'Top performing meme coins on Bitcoin L1',
     components: [
-      comp(PEEP, 2500),
-      comp(DGEN, 2500),
-      comp(BONQ, 2500),
-      comp(SHBA, 2500),
+      { address: ADDR.PEEP, weightBps: 2500 },
+      { address: ADDR.DGEN, weightBps: 2500 },
+      { address: ADDR.BONQ, weightBps: 2500 },
+      { address: ADDR.SHBA, weightBps: 2500 },
     ],
   },
   {
-    address: '0x1498618f7e35e05968bf89e474914372b8652bc66f171f6b7d26d5048d4dc909',
+    address: '0x7face6eedcad07524ef8f6c1d21687e5385c2be764f0315c314db978030804db',
     name: 'OPNet DeFi Index',
     symbol: 'OPDEFI',
     category: 'defi',
     description: 'Core DeFi protocols on Bitcoin L1',
     components: [
-      comp(LNDB, 2500),
-      comp(YLDP, 2500),
-      comp(SWPX, 2500),
-      comp(NEBL, 2500),
+      { address: ADDR.LNDB, weightBps: 2500 },
+      { address: ADDR.YLDP, weightBps: 2500 },
+      { address: ADDR.SWPX, weightBps: 2500 },
+      { address: ADDR.NEBL, weightBps: 2500 },
     ],
   },
-  // ── Expert Indexes ─────────────────────────────────────────────────
   {
-    address: '', // deploy contract, then fill
-    name: 'OpDanny Alpha Index',
-    symbol: 'DANNY',
-    category: 'expert',
-    description: 'OpDanny\'s curated high-conviction picks across AI, DeFi, and meme sectors',
+    address: '0x99c4e810140e01bb9a7d958c19333bc9ee33e3ddb503bee5ea7752dc929d58a2',
+    name: 'OPNet Gaming Index',
+    symbol: 'OPGAME',
+    category: 'gaming',
+    description: 'Gaming and entertainment tokens on Bitcoin L1',
     components: [
-      comp(NRNA, 3000),  // AI — top pick
-      comp(DGEN, 2500),  // Meme
-      comp(YLDP, 2500),  // DeFi
-      comp(CPHR, 2000),  // AI
+      { address: ADDR.MNGO, weightBps: 2500 },
+      { address: ADDR.APPL, weightBps: 2500 },
+      { address: ADDR.AVDO, weightBps: 2500 },
+      { address: ADDR.BERY, weightBps: 2500 },
+    ],
+  },
+  {
+    address: '0x5e40abb52fa1c7c5e388fc5ad95a2810c06d0dde6b2a82bb188ee57c862469e5',
+    name: 'OPNet Infra Index',
+    symbol: 'OPINFRA',
+    category: 'infra',
+    description: 'Bitcoin infrastructure and utility tokens',
+    components: [
+      { address: ADDR.WBTC, weightBps: 2500 },
+      { address: ADDR.STSH, weightBps: 2500 },
+      { address: ADDR.PILL, weightBps: 2500 },
+      { address: ADDR.STR8, weightBps: 2500 },
     ],
   },
 ];
 
-// Category display metadata
-export const CATEGORY_META: Record<string, { label: string; gradient: string }> = {
-  ai: { label: 'AI', gradient: 'from-violet-500 to-purple-600' },
-  meme: { label: 'Meme', gradient: 'from-yellow-500 to-orange-500' },
-  defi: { label: 'DeFi', gradient: 'from-teal-500 to-cyan-500' },
-  expert: { label: 'Expert', gradient: 'from-bitcoin-500 to-amber-500' },
+// ── Expert Indexes (5) ───────────────────────────────────────────────────
+
+export const EXPERT_INDEXES: IndexConfig[] = [
+  {
+    address: '0xc2e5f8d3ad1af23319857960b45344357e289ac1c550c166ace2039c342593c7',
+    name: 'Ansem AI Conviction',
+    symbol: 'ANSEM',
+    category: 'expert',
+    curatorSlug: 'ansem',
+    description: 'AI-heavy conviction picks by Ansem',
+    components: [
+      { address: ADDR.NRNA, weightBps: 3000 },
+      { address: ADDR.CRTX, weightBps: 2500 },
+      { address: ADDR.SYNP, weightBps: 2000 },
+      { address: ADDR.DPLR, weightBps: 1500 },
+      { address: ADDR.CPHR, weightBps: 1000 },
+    ],
+  },
+  {
+    address: '0x22d5b22edc49fd93a73fd571bfe8fd9a64cdb60c244b4cb5345da3481f6ce043',
+    name: 'Chad Degen Plays',
+    symbol: 'CHAD',
+    category: 'expert',
+    curatorSlug: 'chad',
+    description: 'Maximum degen meme exposure by Chad',
+    components: [
+      { address: ADDR.PEEP, weightBps: 3000 },
+      { address: ADDR.DGEN, weightBps: 3000 },
+      { address: ADDR.BONQ, weightBps: 2000 },
+      { address: ADDR.SHBA, weightBps: 2000 },
+    ],
+  },
+  {
+    address: '0xfd59e82e16ac39b0f5343df3d3f4d95cb9a21577ee4cb2597c672600e38e143a',
+    name: 'OpDanny Alpha',
+    symbol: 'DANNY',
+    category: 'expert',
+    curatorSlug: 'danny',
+    description: 'Cross-sector alpha picks by OpDanny',
+    components: [
+      { address: ADDR.NRNA, weightBps: 3000 },
+      { address: ADDR.DGEN, weightBps: 2500 },
+      { address: ADDR.YLDP, weightBps: 2500 },
+      { address: ADDR.CPHR, weightBps: 2000 },
+    ],
+  },
+  {
+    address: '0x7b7d1f1d33cad8cc7b06dbf992f985dcd8896aef8082eb4ab23ca8ffad13c42d',
+    name: 'GCR DeFi Infra',
+    symbol: 'GCR',
+    category: 'expert',
+    curatorSlug: 'gaygcr',
+    description: 'DeFi infrastructure thesis by GayGCR',
+    components: [
+      { address: ADDR.LNDB, weightBps: 2500 },
+      { address: ADDR.YLDP, weightBps: 2500 },
+      { address: ADDR.WBTC, weightBps: 2500 },
+      { address: ADDR.STSH, weightBps: 2500 },
+    ],
+  },
+  {
+    address: '0x1a224882246f9f61bae56a457843449dabaa7d13c57801f21cfc70a2c6544986',
+    name: 'Vulture Deep Value',
+    symbol: 'VULTURE',
+    category: 'expert',
+    curatorSlug: 'vulture',
+    description: 'Contrarian deep-value picks by Vulture',
+    components: [
+      { address: ADDR.PILL, weightBps: 2500 },
+      { address: ADDR.STR8, weightBps: 2500 },
+      { address: ADDR.NEBL, weightBps: 2500 },
+      { address: ADDR.SWPX, weightBps: 2500 },
+    ],
+  },
+];
+
+// ── All indexes combined ─────────────────────────────────────────────────
+export const ALL_INDEXES: IndexConfig[] = [...CATEGORY_INDEXES, ...EXPERT_INDEXES];
+
+// Lookup by address
+export function getIndexByAddress(address: string): IndexConfig | undefined {
+  return ALL_INDEXES.find((idx) => idx.address.toLowerCase() === address.toLowerCase());
+}
+
+// Lookup by symbol
+export function getIndexBySymbol(symbol: string): IndexConfig | undefined {
+  return ALL_INDEXES.find((idx) => idx.symbol.toLowerCase() === symbol.toLowerCase());
+}
+
+// ── Category display metadata ────────────────────────────────────────────
+export const CATEGORY_META: Record<IndexCategory, { label: string; color: string; gradient: string }> = {
+  ai: { label: 'AI', color: 'text-violet-400', gradient: 'from-violet-500 to-purple-600' },
+  meme: { label: 'Meme', color: 'text-yellow-400', gradient: 'from-yellow-500 to-orange-500' },
+  defi: { label: 'DeFi', color: 'text-teal-400', gradient: 'from-teal-500 to-cyan-500' },
+  gaming: { label: 'Gaming', color: 'text-emerald-400', gradient: 'from-emerald-500 to-green-500' },
+  infra: { label: 'Infra', color: 'text-blue-400', gradient: 'from-blue-500 to-indigo-500' },
+  expert: { label: 'Expert', color: 'text-bitcoin-400', gradient: 'from-bitcoin-500 to-amber-500' },
 };

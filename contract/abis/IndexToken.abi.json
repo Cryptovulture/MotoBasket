@@ -31,6 +31,81 @@
                 {
                     "name": "shareAmount",
                     "type": "UINT256"
+                },
+                {
+                    "name": "minMotoOut",
+                    "type": "UINT256"
+                }
+            ],
+            "outputs": [
+                {
+                    "name": "motoReturned",
+                    "type": "UINT256"
+                }
+            ]
+        },
+        {
+            "name": "rebalance",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "success",
+                    "type": "BOOL"
+                }
+            ]
+        },
+        {
+            "name": "updateWeights",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [
+                {
+                    "name": "count",
+                    "type": "UINT256"
+                }
+            ],
+            "outputs": [
+                {
+                    "name": "success",
+                    "type": "BOOL"
+                }
+            ]
+        },
+        {
+            "name": "updatePair",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [
+                {
+                    "name": "componentIndex",
+                    "type": "UINT256"
+                },
+                {
+                    "name": "newPairAddr",
+                    "type": "ADDRESS"
+                }
+            ],
+            "outputs": [
+                {
+                    "name": "success",
+                    "type": "BOOL"
+                }
+            ]
+        },
+        {
+            "name": "setMinInvestment",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [
+                {
+                    "name": "amount",
+                    "type": "UINT256"
                 }
             ],
             "outputs": [
@@ -72,6 +147,10 @@
                 {
                     "name": "weight",
                     "type": "UINT256"
+                },
+                {
+                    "name": "pair",
+                    "type": "ADDRESS"
                 }
             ]
         },
@@ -90,6 +169,71 @@
                 {
                     "name": "amount",
                     "type": "UINT256"
+                }
+            ]
+        },
+        {
+            "name": "getCurator",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "curator",
+                    "type": "ADDRESS"
+                }
+            ]
+        },
+        {
+            "name": "getLastRebalanceBlock",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "blockNumber",
+                    "type": "UINT256"
+                }
+            ]
+        },
+        {
+            "name": "getMinInvestment",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "amount",
+                    "type": "UINT256"
+                }
+            ]
+        },
+        {
+            "name": "getOwner",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "owner",
+                    "type": "ADDRESS"
+                }
+            ]
+        },
+        {
+            "name": "getMotoAddress",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "moto",
+                    "type": "ADDRESS"
                 }
             ]
         }

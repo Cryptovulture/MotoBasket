@@ -4,9 +4,17 @@
   "type": "module",
   "scripts": {
     "deploy": "tsx deploy.ts",
+    "deploy:all": "INDEX=ALL tsx deploy.ts",
     "deploy:opai": "INDEX=OPAI tsx deploy.ts",
     "deploy:opmeme": "INDEX=OPMEME tsx deploy.ts",
-    "deploy:opdefi": "INDEX=OPDEFI tsx deploy.ts"
+    "deploy:opdefi": "INDEX=OPDEFI tsx deploy.ts",
+    "deploy:opgame": "INDEX=OPGAME tsx deploy.ts",
+    "deploy:opinfra": "INDEX=OPINFRA tsx deploy.ts",
+    "deploy:ansem": "INDEX=ANSEM tsx deploy.ts",
+    "deploy:chad": "INDEX=CHAD tsx deploy.ts",
+    "deploy:danny": "INDEX=DANNY tsx deploy.ts",
+    "deploy:gcr": "INDEX=GCR tsx deploy.ts",
+    "deploy:vulture": "INDEX=VULTURE tsx deploy.ts"
   },
   "dependencies": {
     "@btc-vision/bip32": "^7.1.2",

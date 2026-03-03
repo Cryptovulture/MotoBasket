@@ -1,25 +1,19 @@
-import { createContext, useContext } from 'react';
+import { useWalletConnect } from '@btc-vision/walletconnect';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const defaultWallet: any = {
-  isConnected: false,
-  senderAddress: undefined,
-  connect: () => { console.warn('Wallet provider not available'); },
-  disconnect: () => { console.warn('Wallet provider not available'); },
-  address: undefined,
-  publicKey: undefined,
-  hashedMLDSAKey: undefined,
-  signer: undefined,
-  mldsaSigner: undefined,
-  p2trAddress: undefined,
-  network: undefined,
-  sendTransaction: async () => { throw new Error('Wallet not connected'); },
-};
+// Thin wrapper around walletconnect context for consistent API
+export function useWallet() {
+  const wc = useWalletConnect();
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const WalletContext = createContext<any>(defaultWallet);
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function useWallet(): any {
-  return useContext(WalletContext);
+  return {
+    connected: !!wc.walletAddress,
+    address: wc.walletAddress ?? '',
+    publicKey: wc.publicKey ?? '',
+    connecting: wc.connecting,
+    connect: wc.openConnectModal,
+    disconnect: wc.disconnect,
+    provider: wc.provider,
+    signer: wc.signer,
+    walletInstance: wc.walletInstance,
+    addressObj: wc.address,
+  };
 }

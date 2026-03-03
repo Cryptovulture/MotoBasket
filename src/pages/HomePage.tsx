@@ -1,204 +1,150 @@
 import { Link } from 'react-router-dom';
-import { INDEX_CONFIGS, CATEGORY_META } from '../config/indexes';
+import { Card } from '../components/ui/Card';
+import { Badge } from '../components/ui/Badge';
+import { CATEGORY_INDEXES, EXPERT_INDEXES, CATEGORY_META } from '../config/indexes';
+import { EXPERTS, getExpertBySlug } from '../config/experts';
+import { getTokenSymbol } from '../config/tokens';
 
-const TOKEN_COLORS: Record<string, string> = {
-  MOTO: 'from-green-500 to-emerald-500',
-  NEBL: 'from-blue-500 to-cyan-500',
-  CPHR: 'from-purple-500 to-indigo-500',
-  VRTX: 'from-orange-500 to-red-500',
-  NRNA: 'from-violet-500 to-purple-500',
-  SYNP: 'from-cyan-500 to-blue-500',
-  CRTX: 'from-indigo-500 to-violet-500',
-  DPLR: 'from-blue-400 to-indigo-500',
-  PEEP: 'from-green-400 to-lime-500',
-  DGEN: 'from-yellow-500 to-orange-500',
-  BONQ: 'from-orange-400 to-amber-500',
-  SHBA: 'from-red-400 to-orange-500',
-  LNDB: 'from-teal-500 to-cyan-500',
-  YLDP: 'from-emerald-500 to-teal-500',
-  SWPX: 'from-sky-500 to-blue-500',
-};
-
-function IndexCard({ config, i }: { config: typeof INDEX_CONFIGS[number]; i: number }) {
-  const category = CATEGORY_META[config.category];
-  const totalWeight = config.components.reduce((s, c) => s + c.weightBps, 0);
-  const isDeployed = Boolean(config.address);
-
-  const linkTo = isDeployed ? `/index/${encodeURIComponent(config.address)}` : '#';
-
+export function HomePage() {
   return (
-    <Link
-      to={linkTo}
-      className={`block group ${!isDeployed ? 'pointer-events-none opacity-60' : ''}`}
-      style={{ animationDelay: `${i * 80}ms` }}
-    >
-      <div className="bg-dark-800 border border-dark-700 rounded-2xl p-6 hover:border-bitcoin-500/50 transition-all hover:shadow-xl hover:shadow-bitcoin-500/10 transform hover:-translate-y-1 animate-fade-in">
-        <div className="flex items-start justify-between mb-3">
-          <div>
-            <div className="flex items-center space-x-3 mb-1">
-              <h3 className="text-2xl font-display font-bold text-white group-hover:text-bitcoin-500 transition-colors">
-                {config.symbol}
-              </h3>
-              {isDeployed ? (
-                <span className="px-2 py-1 bg-green-500/10 text-green-500 text-xs font-medium rounded border border-green-500/20">
-                  Live
-                </span>
-              ) : (
-                <span className="px-2 py-1 bg-yellow-500/10 text-yellow-400 text-xs font-medium rounded border border-yellow-500/20">
-                  Coming Soon
-                </span>
-              )}
-              {category && (
-                <span className={`px-2 py-1 bg-gradient-to-r ${category.gradient} bg-opacity-10 text-white text-xs font-medium rounded`}>
-                  {category.label}
-                </span>
-              )}
-            </div>
-            <p className="text-dark-400 text-sm">{config.name}</p>
-          </div>
-          <div className="text-right">
-            <div className="text-lg font-bold text-white">{config.components.length}</div>
-            <div className="text-xs text-dark-500">tokens</div>
+    <div className="space-y-16">
+      {/* Hero */}
+      <section className="relative py-16 text-center overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-radial from-bitcoin-500/5 via-transparent to-transparent" />
+        <div className="relative space-y-6">
+          <img
+            src="/logos/motobasket-main.png"
+            alt="MotoBasket"
+            className="w-20 h-20 mx-auto rounded-2xl shadow-lg shadow-bitcoin-500/20"
+          />
+          <h1 className="text-4xl md:text-5xl font-display font-bold">
+            <span className="gradient-text">MotoBasket</span>
+          </h1>
+          <p className="text-lg text-dark-300 max-w-xl mx-auto">
+            Diversified index investing on Bitcoin L1. One token, instant exposure
+            to the best of OPNet.
+          </p>
+          <div className="flex items-center justify-center gap-8 text-sm">
+            <Stat label="Indexes" value={String(CATEGORY_INDEXES.length + EXPERT_INDEXES.length)} />
+            <Stat label="Categories" value={String(CATEGORY_INDEXES.length)} />
+            <Stat label="Experts" value={String(EXPERT_INDEXES.length)} />
           </div>
         </div>
+      </section>
 
-        <p className="text-dark-300 text-sm mb-4">{config.description}</p>
-
-        {/* Token composition badges */}
-        <div className="flex flex-wrap gap-2 mb-4">
-          {config.components.map((comp) => {
-            const pct = totalWeight > 0 ? Math.round((comp.weightBps / totalWeight) * 100) : 0;
-            const gradient = TOKEN_COLORS[comp.symbol] || 'from-gray-500 to-gray-600';
-            return (
-              <span
-                key={comp.address}
-                className="flex items-center gap-2 px-3 py-1.5 bg-dark-700 text-dark-200 text-xs rounded-lg font-mono hover:bg-dark-600 transition-colors"
-              >
-                <div className={`w-4 h-4 rounded-full bg-gradient-to-br ${gradient} flex items-center justify-center text-[8px] font-bold text-white`}>
-                  {comp.symbol[0]}
+      {/* Category Indexes */}
+      <section>
+        <h2 className="text-xl font-display font-semibold mb-6">Category Indexes</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {CATEGORY_INDEXES.map((idx) => (
+            <Link key={idx.symbol} to={idx.address ? `/index/${idx.address}` : '#'}>
+              <Card hover className="p-5 h-full">
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <h3 className="font-display font-semibold text-lg">{idx.symbol}</h3>
+                    <p className="text-sm text-dark-400">{idx.name}</p>
+                  </div>
+                  <Badge category={idx.category} />
                 </div>
-                {comp.symbol} {pct}%
-              </span>
-            );
-          })}
+                <p className="text-xs text-dark-500 mb-3">{idx.description}</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {idx.components.map((c) => (
+                    <span
+                      key={c.address}
+                      className="px-2 py-0.5 text-xs rounded bg-dark-700/50 text-dark-300 font-mono"
+                    >
+                      {getTokenSymbol(c.address)}
+                    </span>
+                  ))}
+                </div>
+                {!idx.address && (
+                  <span className="mt-3 inline-block text-xs text-dark-500 italic">
+                    Not yet deployed
+                  </span>
+                )}
+              </Card>
+            </Link>
+          ))}
         </div>
+      </section>
 
-        {/* Weight bar */}
-        <div className="flex h-2 rounded-full overflow-hidden bg-dark-700">
-          {config.components.map((comp, idx) => {
-            const pct = totalWeight > 0 ? (comp.weightBps / totalWeight) * 100 : 0;
-            const colors = ['bg-yellow-500', 'bg-purple-500', 'bg-red-500', 'bg-green-500', 'bg-blue-500'];
+      {/* Expert Spotlight */}
+      <section>
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-display font-semibold">Expert Indexes</h2>
+          <Link to="/experts" className="text-sm text-bitcoin-400 hover:text-bitcoin-300">
+            View all experts
+          </Link>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {EXPERT_INDEXES.map((idx) => {
+            const expert = getExpertBySlug(idx.curatorSlug ?? '');
             return (
-              <div
-                key={comp.address}
-                className={`${colors[idx % colors.length]} transition-all`}
-                style={{ width: `${pct}%` }}
-              />
+              <Link key={idx.symbol} to={idx.address ? `/index/${idx.address}` : `/expert/${idx.curatorSlug}`}>
+                <Card hover className="p-5 h-full">
+                  <div className="flex items-center gap-3 mb-3">
+                    {expert && (
+                      <img
+                        src={expert.avatar}
+                        alt={expert.name}
+                        className="w-10 h-10 rounded-full ring-2 ring-bitcoin-500/30"
+                      />
+                    )}
+                    <div>
+                      <h3 className="font-display font-semibold">{idx.symbol}</h3>
+                      <p className="text-xs text-dark-400">
+                        {expert?.name ?? 'Unknown'} &middot; {expert?.focus}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-dark-500 mb-3">{idx.description}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {idx.components.map((c) => (
+                      <span
+                        key={c.address}
+                        className="px-2 py-0.5 text-xs rounded bg-dark-700/50 text-dark-300 font-mono"
+                      >
+                        {getTokenSymbol(c.address)}
+                      </span>
+                    ))}
+                  </div>
+                </Card>
+              </Link>
             );
           })}
         </div>
-      </div>
-    </Link>
+      </section>
+
+      {/* How It Works */}
+      <section className="pb-8">
+        <h2 className="text-xl font-display font-semibold mb-8 text-center">How It Works</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-3xl mx-auto">
+          <Step num={1} title="Choose an Index" desc="Pick a category or expert-curated index that matches your thesis." />
+          <Step num={2} title="Invest MOTO" desc="Send MOTO to the index contract. It auto-swaps into all component tokens." />
+          <Step num={3} title="Hold or Redeem" desc="Your index token tracks the basket. Redeem anytime to get MOTO back." />
+        </div>
+      </section>
+    </div>
   );
 }
 
-export default function HomePage() {
-  const standard = INDEX_CONFIGS.filter(c => c.category !== 'expert');
-  const expert = INDEX_CONFIGS.filter(c => c.category === 'expert');
-  const deployed = INDEX_CONFIGS.filter(c => c.address);
-
+function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="pb-20">
-      {/* Hero Section */}
-      <div className="relative overflow-hidden bg-gradient-to-b from-dark-800 to-dark-900 border-b border-dark-700">
-        <div className="absolute inset-0 overflow-hidden opacity-30">
-          <div className="absolute top-0 -left-4 w-72 sm:w-96 h-72 sm:h-96 bg-bitcoin-500 rounded-full mix-blend-multiply filter blur-3xl animate-pulse-slow" />
-          <div className="absolute top-0 -right-4 w-72 sm:w-96 h-72 sm:h-96 bg-bitcoin-600 rounded-full mix-blend-multiply filter blur-3xl animate-pulse-slow" style={{ animationDelay: '1s' }} />
-          <div className="absolute -bottom-8 left-20 w-72 sm:w-96 h-72 sm:h-96 bg-bitcoin-400 rounded-full mix-blend-multiply filter blur-3xl animate-pulse-slow" style={{ animationDelay: '2s' }} />
-        </div>
+    <div className="text-center">
+      <div className="text-2xl font-display font-bold gradient-text">{value}</div>
+      <div className="text-xs text-dark-500 mt-0.5">{label}</div>
+    </div>
+  );
+}
 
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24">
-          <div className="text-center">
-            <div className="inline-flex items-center px-4 py-2 rounded-full bg-bitcoin-500/10 border border-bitcoin-500/20 mb-8 animate-fade-in">
-              <span className="text-bitcoin-500 text-sm font-medium">Diversified Index Investing on Bitcoin L1</span>
-            </div>
-
-            <h1 className="text-5xl md:text-7xl font-display font-bold text-white mb-6 animate-slide-up">
-              Stop Guessing.
-              <br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-bitcoin-400 to-bitcoin-600">
-                Start Investing.
-              </span>
-            </h1>
-
-            <p className="text-lg md:text-xl text-dark-300 max-w-2xl mx-auto mb-12 animate-slide-up" style={{ animationDelay: '100ms' }}>
-              Buy index tokens that hold diversified portfolios.
-              <br />
-              One click. Complete exposure. Powered by MOTO.
-            </p>
-
-            <div className="flex justify-center animate-slide-up" style={{ animationDelay: '200ms' }}>
-              <button
-                onClick={() => document.getElementById('indexes')?.scrollIntoView({ behavior: 'smooth' })}
-                className="px-8 py-4 bg-gradient-to-r from-bitcoin-500 to-bitcoin-600 hover:from-bitcoin-600 hover:to-bitcoin-700 text-white font-medium rounded-xl transition-all transform hover:scale-105 active:scale-95 shadow-2xl shadow-bitcoin-500/30"
-              >
-                Browse Indexes
-              </button>
-            </div>
-
-            <div className="grid grid-cols-3 gap-8 max-w-3xl mx-auto mt-16 animate-slide-up" style={{ animationDelay: '300ms' }}>
-              <div className="text-center">
-                <div className="text-3xl md:text-4xl font-display font-bold text-white mb-2">
-                  {INDEX_CONFIGS.length}
-                </div>
-                <div className="text-sm text-dark-400">Index Tokens</div>
-              </div>
-              <div className="text-center">
-                <div className="text-3xl md:text-4xl font-display font-bold text-white mb-2">
-                  {deployed.length}
-                </div>
-                <div className="text-sm text-dark-400">Live</div>
-              </div>
-              <div className="text-center">
-                <div className="text-3xl md:text-4xl font-display font-bold text-white mb-2">
-                  OP20
-                </div>
-                <div className="text-sm text-dark-400">Standard Tokens</div>
-              </div>
-            </div>
-          </div>
-        </div>
+function Step({ num, title, desc }: { num: number; title: string; desc: string }) {
+  return (
+    <div className="text-center space-y-3">
+      <div className="w-12 h-12 rounded-full bg-bitcoin-500/10 border border-bitcoin-500/30 flex items-center justify-center mx-auto">
+        <span className="text-bitcoin-400 font-display font-bold">{num}</span>
       </div>
-
-      {/* Index Grid */}
-      <div id="indexes" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-12">
-        <h2 className="text-2xl font-display font-bold text-white mb-6">Index Tokens</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {standard.map((config, i) => (
-            <IndexCard key={config.symbol} config={config} i={i} />
-          ))}
-        </div>
-      </div>
-
-      {/* Expert Indexes */}
-      {expert.length > 0 && (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-16">
-          <div className="flex items-center space-x-3 mb-6">
-            <h2 className="text-2xl font-display font-bold text-white">Expert Indexes</h2>
-            <span className="px-3 py-1 bg-gradient-to-r from-bitcoin-500 to-amber-500 text-white text-xs font-bold rounded-full">
-              KOL Curated
-            </span>
-          </div>
-          <p className="text-dark-400 text-sm mb-6 max-w-2xl">
-            Community-curated indexes built by top OPNet traders and influencers. Each expert selects their high-conviction picks with custom weightings.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {expert.map((config, i) => (
-              <IndexCard key={config.symbol} config={config} i={standard.length + i} />
-            ))}
-          </div>
-        </div>
-      )}
+      <h3 className="font-display font-semibold">{title}</h3>
+      <p className="text-sm text-dark-400">{desc}</p>
     </div>
   );
 }

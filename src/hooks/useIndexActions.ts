@@ -8,7 +8,7 @@ import { NETWORK, RPC_URL } from '../config/network';
 import { useToast } from '../components/ui/Toast';
 import { useTxTracker } from './useTxTracker';
 
-type ActionState = 'idle' | 'approving' | 'confirming' | 'simulating' | 'sending';
+type ActionState = 'idle' | 'approving' | 'simulating' | 'sending';
 
 interface IndexActions {
   invest: (indexAddress: string, motoAmount: bigint, minSharesOut: bigint) => Promise<void>;
@@ -24,25 +24,6 @@ function getProvider(): JSONRpcProvider {
     rpcProvider = new JSONRpcProvider({ url: RPC_URL, network: NETWORK });
   }
   return rpcProvider;
-}
-
-// Poll for TX confirmation instead of blind sleep
-async function waitForConfirmation(
-  txId: string,
-  maxAttempts = 40,
-  intervalMs = 5000,
-): Promise<void> {
-  const provider = getProvider();
-  for (let i = 0; i < maxAttempts; i++) {
-    try {
-      const receipt = await provider.getTransactionReceipt(txId);
-      if (receipt) return;
-    } catch {
-      // Not confirmed yet
-    }
-    await new Promise((r) => setTimeout(r, intervalMs));
-  }
-  throw new Error('Approval confirmation timed out. Try again.');
 }
 
 export function useIndexActions(): IndexActions {
@@ -68,33 +49,43 @@ export function useIndexActions(): IndexActions {
 
       const motoAddr = hexToAddress(MOTO_ADDRESS);
       const indexAddr = hexToAddress(indexAddress);
-
-      // Step 1: Approve MOTO spend on the index contract
-      setState('approving');
       const motoContract = getContract(motoAddr, OP_20_ABI, provider, NETWORK, senderAddress);
-      const approveSim = await (motoContract as any).increaseAllowance(indexAddr, motoAmount);
-      if (approveSim.revert) throw new Error(`Approval simulation failed: ${approveSim.revert}`);
 
-      const approveReceipt = await approveSim.sendTransaction({
-        signer: null,
-        mldsaSigner: null,
-        refundTo: walletAddr,
-        maximumAllowedSatToSpend: 100_000n,
-        network: NETWORK,
-      });
+      // Step 1: Check existing allowance
+      setState('approving');
+      let needsApproval = true;
+      try {
+        const allowanceResult = await (motoContract as any).allowance(senderAddress, indexAddr);
+        if (!allowanceResult.revert && allowanceResult.properties?.remaining >= motoAmount) {
+          needsApproval = false;
+        }
+      } catch {
+        // If allowance check fails, assume we need approval
+      }
 
-      const approveTxId = approveReceipt?.transactionId;
-      if (!approveTxId) throw new Error('Approval TX failed — no transaction ID returned');
+      if (needsApproval) {
+        // Send approval TX — user must click Invest again after it confirms
+        const approveSim = await (motoContract as any).increaseAllowance(indexAddr, motoAmount);
+        if (approveSim.revert) throw new Error(`Approval simulation failed: ${approveSim.revert}`);
 
-      toast('Approval sent. Waiting for confirmation...', 'info');
+        const approveReceipt = await approveSim.sendTransaction({
+          signer: null,
+          mldsaSigner: null,
+          refundTo: walletAddr,
+          maximumAllowedSatToSpend: 100_000n,
+          network: NETWORK,
+        });
 
-      // Step 2: Wait for approval TX to confirm on-chain
-      setState('confirming');
-      await waitForConfirmation(approveTxId);
+        const approveTxId = approveReceipt?.transactionId;
+        if (!approveTxId) throw new Error('Approval TX failed — no transaction ID returned');
 
-      toast('Approval confirmed. Investing...', 'info');
+        toast('Approval TX sent! Wait for it to confirm (~30s), then click Invest again.', 'info');
+        setState('idle');
+        return;
+      }
 
-      // Step 3: Invest
+      // Step 2: Allowance is sufficient — invest directly
+      toast('Allowance confirmed. Simulating invest...', 'info');
       setState('simulating');
       const indexContract = getContract(indexAddr, INDEX_TOKEN_ABI, provider, NETWORK, senderAddress);
       const investSim = await (indexContract as any).invest(motoAmount, minSharesOut);

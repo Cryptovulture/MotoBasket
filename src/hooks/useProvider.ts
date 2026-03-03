@@ -7,7 +7,7 @@ let providerInstance: JSONRpcProvider | null = null;
 
 function getProvider(): JSONRpcProvider {
   if (!providerInstance) {
-    providerInstance = new JSONRpcProvider(RPC_URL, NETWORK);
+    providerInstance = new JSONRpcProvider({ url: RPC_URL, network: NETWORK });
   }
   return providerInstance;
 }

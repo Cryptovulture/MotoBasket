@@ -2,31 +2,35 @@ import { useState, useCallback } from 'react';
 import { getContract } from 'opnet';
 import { useProvider } from './useProvider';
 import { useWallet } from './useWallet';
+import { INDEX_TOKEN_ABI } from '../config/abi';
 import { hexToP2OP } from '../lib/address';
 import { NETWORK } from '../config/network';
 import { useToast } from '../components/ui/Toast';
 
 export function useRebalance() {
   const provider = useProvider();
-  const { signer } = useWallet();
+  const { address: walletAddr } = useWallet();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
 
   const triggerRebalance = useCallback(async (indexAddress: string) => {
-    if (!signer) {
+    if (!walletAddr) {
       toast('Wallet not connected', 'error');
       return;
     }
 
     try {
       setLoading(true);
-      const contract = getContract(hexToP2OP(indexAddress), provider, NETWORK);
-      const sim = await contract.rebalance();
-      if (!sim.result) throw new Error('Rebalance simulation failed');
+      const contract = getContract(hexToP2OP(indexAddress), INDEX_TOKEN_ABI, provider, NETWORK);
+      const sim = await (contract as any).rebalance();
+      if (sim.revert) throw new Error(`Rebalance reverted: ${sim.revert}`);
 
-      await signer.sendTransaction(sim, {
+      await sim.sendTransaction({
         signer: null,
         mldsaSigner: null,
+        refundTo: walletAddr,
+        maximumAllowedSatToSpend: 100_000n,
+        network: NETWORK,
       });
 
       toast('Rebalance submitted!', 'success');
@@ -35,20 +39,23 @@ export function useRebalance() {
     } finally {
       setLoading(false);
     }
-  }, [provider, signer, toast]);
+  }, [provider, walletAddr, toast]);
 
   const updateWeights = useCallback(async (indexAddress: string, weights: bigint[]) => {
-    if (!signer) return;
+    if (!walletAddr) return;
 
     try {
       setLoading(true);
-      const contract = getContract(hexToP2OP(indexAddress), provider, NETWORK);
-      const sim = await contract.updateWeights(BigInt(weights.length), ...weights);
-      if (!sim.result) throw new Error('Update weights simulation failed');
+      const contract = getContract(hexToP2OP(indexAddress), INDEX_TOKEN_ABI, provider, NETWORK);
+      const sim = await (contract as any).updateWeights(BigInt(weights.length), weights);
+      if (sim.revert) throw new Error(`Update weights reverted: ${sim.revert}`);
 
-      await signer.sendTransaction(sim, {
+      await sim.sendTransaction({
         signer: null,
         mldsaSigner: null,
+        refundTo: walletAddr,
+        maximumAllowedSatToSpend: 100_000n,
+        network: NETWORK,
       });
 
       toast('Weights updated!', 'success');
@@ -57,7 +64,7 @@ export function useRebalance() {
     } finally {
       setLoading(false);
     }
-  }, [provider, signer, toast]);
+  }, [provider, walletAddr, toast]);
 
   return { triggerRebalance, updateWeights, loading };
 }

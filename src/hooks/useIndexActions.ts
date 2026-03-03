@@ -1,8 +1,9 @@
 import { useState, useCallback } from 'react';
-import { getContract } from 'opnet';
+import { getContract, OP_20_ABI } from 'opnet';
 import { useProvider } from './useProvider';
 import { useWallet } from './useWallet';
 import { MOTO_ADDRESS } from '../config/tokens';
+import { INDEX_TOKEN_ABI } from '../config/abi';
 import { hexToP2OP } from '../lib/address';
 import { NETWORK } from '../config/network';
 import { useToast } from '../components/ui/Toast';
@@ -19,14 +20,14 @@ interface IndexActions {
 
 export function useIndexActions(): IndexActions {
   const provider = useProvider();
-  const { connected, signer } = useWallet();
+  const { connected, address: walletAddr } = useWallet();
   const { toast } = useToast();
   const { addTx } = useTxTracker();
   const [state, setState] = useState<ActionState>('idle');
   const [error, setError] = useState<string | null>(null);
 
   const invest = useCallback(async (indexAddress: string, motoAmount: bigint, minSharesOut: bigint) => {
-    if (!connected || !signer) {
+    if (!connected || !walletAddr) {
       setError('Wallet not connected');
       return;
     }
@@ -34,38 +35,44 @@ export function useIndexActions(): IndexActions {
     try {
       setError(null);
 
-      // Step 1: Approve MOTO spend
+      // Step 1: Approve MOTO spend on the index contract
       setState('approving');
       const motoP2op = hexToP2OP(MOTO_ADDRESS);
-      const motoContract = getContract(motoP2op, provider, NETWORK);
-      const approveSim = await motoContract.increaseAllowance(indexAddress, motoAmount);
-      if (!approveSim.result) throw new Error('Approval simulation failed');
+      const indexP2op = hexToP2OP(indexAddress);
+      const motoContract = getContract(motoP2op, OP_20_ABI, provider, NETWORK);
+      const approveSim = await (motoContract as any).increaseAllowance(indexP2op, motoAmount);
+      if (approveSim.revert) throw new Error(`Approval reverted: ${approveSim.revert}`);
 
-      const approveTx = await signer.sendTransaction(approveSim, {
+      const approveReceipt = await approveSim.sendTransaction({
         signer: null,
         mldsaSigner: null,
+        refundTo: walletAddr,
+        maximumAllowedSatToSpend: 100_000n,
+        network: NETWORK,
       });
 
       toast('Approval sent. Waiting for confirmation...', 'info');
       setState('waiting');
 
-      // Wait for block confirmation before invest
+      // Wait for block confirmation before invest (OPNet TX chaining doesn't work)
       await new Promise((resolve) => setTimeout(resolve, 35_000));
 
       // Step 2: Invest
       setState('simulating');
-      const indexP2op = hexToP2OP(indexAddress);
-      const indexContract = getContract(indexP2op, provider, NETWORK);
-      const investSim = await indexContract.invest(motoAmount, minSharesOut);
-      if (!investSim.result) throw new Error('Invest simulation failed');
+      const indexContract = getContract(indexP2op, INDEX_TOKEN_ABI, provider, NETWORK);
+      const investSim = await (indexContract as any).invest(motoAmount, minSharesOut);
+      if (investSim.revert) throw new Error(`Invest reverted: ${investSim.revert}`);
 
       setState('sending');
-      const txResult = await signer.sendTransaction(investSim, {
+      const txResult = await investSim.sendTransaction({
         signer: null,
         mldsaSigner: null,
+        refundTo: walletAddr,
+        maximumAllowedSatToSpend: 100_000n,
+        network: NETWORK,
       });
 
-      const txid = typeof txResult === 'string' ? txResult : txResult?.txid ?? '';
+      const txid = txResult?.transactionId ?? '';
       if (txid) {
         addTx({
           txid,
@@ -83,10 +90,10 @@ export function useIndexActions(): IndexActions {
     } finally {
       setState('idle');
     }
-  }, [provider, connected, signer, toast, addTx]);
+  }, [provider, connected, walletAddr, toast, addTx]);
 
   const redeem = useCallback(async (indexAddress: string, shareAmount: bigint, minMotoOut: bigint) => {
-    if (!connected || !signer) {
+    if (!connected || !walletAddr) {
       setError('Wallet not connected');
       return;
     }
@@ -96,17 +103,20 @@ export function useIndexActions(): IndexActions {
       setState('simulating');
 
       const indexP2op = hexToP2OP(indexAddress);
-      const indexContract = getContract(indexP2op, provider, NETWORK);
-      const redeemSim = await indexContract.redeem(shareAmount, minMotoOut);
-      if (!redeemSim.result) throw new Error('Redeem simulation failed');
+      const indexContract = getContract(indexP2op, INDEX_TOKEN_ABI, provider, NETWORK);
+      const redeemSim = await (indexContract as any).redeem(shareAmount, minMotoOut);
+      if (redeemSim.revert) throw new Error(`Redeem reverted: ${redeemSim.revert}`);
 
       setState('sending');
-      const txResult = await signer.sendTransaction(redeemSim, {
+      const txResult = await redeemSim.sendTransaction({
         signer: null,
         mldsaSigner: null,
+        refundTo: walletAddr,
+        maximumAllowedSatToSpend: 100_000n,
+        network: NETWORK,
       });
 
-      const txid = typeof txResult === 'string' ? txResult : txResult?.txid ?? '';
+      const txid = txResult?.transactionId ?? '';
       if (txid) {
         addTx({
           txid,
@@ -124,7 +134,7 @@ export function useIndexActions(): IndexActions {
     } finally {
       setState('idle');
     }
-  }, [provider, connected, signer, toast, addTx]);
+  }, [provider, connected, walletAddr, toast, addTx]);
 
   return { invest, redeem, state, error };
 }

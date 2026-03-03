@@ -149,7 +149,7 @@ export const EXPERT_INDEXES: IndexConfig[] = [
     ],
   },
   {
-    address: '0x1a224882246f9f61bae56a457843449dabaa7d13c57801f21cfc70a2c6544986',
+    address: '0xdf5624ec47b992e91b218244299795df35f0a6aacac1e4c7fef3aef38a08192a',
     name: 'Vulture Deep Value',
     symbol: 'VULTURE',
     category: 'expert',

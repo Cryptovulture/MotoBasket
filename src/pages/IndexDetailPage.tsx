@@ -73,8 +73,8 @@ export function IndexDetailPage() {
     redeem(address, amount, 0n);
   };
 
-  const stepLabels = ['Approve', 'Simulate', 'Send'];
-  const stepIndex = actionState === 'approving' ? 0 : actionState === 'simulating' ? 1 : actionState === 'sending' ? 2 : -1;
+  const stepLabels = ['Approve', 'Confirming', 'Simulate', 'Send'];
+  const stepIndex = actionState === 'approving' ? 0 : actionState === 'confirming' ? 1 : actionState === 'simulating' ? 2 : actionState === 'sending' ? 3 : -1;
 
   return (
     <div className="space-y-6">

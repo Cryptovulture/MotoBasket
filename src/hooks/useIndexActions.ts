@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { getContract, OP_20_ABI } from 'opnet';
-import { useProvider } from './useProvider';
+import type { AbstractRpcProvider } from 'opnet';
 import { useWallet } from './useWallet';
 import { MOTO_ADDRESS } from '../config/tokens';
 import { INDEX_TOKEN_ABI } from '../config/abi';
@@ -9,7 +9,7 @@ import { NETWORK } from '../config/network';
 import { useToast } from '../components/ui/Toast';
 import { useTxTracker } from './useTxTracker';
 
-type ActionState = 'idle' | 'approving' | 'simulating' | 'sending' | 'waiting';
+type ActionState = 'idle' | 'approving' | 'confirming' | 'simulating' | 'sending';
 
 interface IndexActions {
   invest: (indexAddress: string, motoAmount: bigint, minSharesOut: bigint) => Promise<void>;
@@ -18,16 +18,34 @@ interface IndexActions {
   error: string | null;
 }
 
+// Poll for TX confirmation instead of blind sleep
+async function waitForConfirmation(
+  provider: AbstractRpcProvider,
+  txId: string,
+  maxAttempts = 40,
+  intervalMs = 5000,
+): Promise<void> {
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const receipt = await provider.getTransactionReceipt(txId);
+      if (receipt) return;
+    } catch {
+      // Not confirmed yet
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  throw new Error('Approval confirmation timed out. Try again.');
+}
+
 export function useIndexActions(): IndexActions {
-  const provider = useProvider();
-  const { connected, address: walletAddr, addressObj: walletAddrObj } = useWallet();
+  const { connected, address: walletAddr, senderAddress, provider: walletProvider } = useWallet();
   const { toast } = useToast();
   const { addTx } = useTxTracker();
   const [state, setState] = useState<ActionState>('idle');
   const [error, setError] = useState<string | null>(null);
 
   const invest = useCallback(async (indexAddress: string, motoAmount: bigint, minSharesOut: bigint) => {
-    if (!connected || !walletAddr || !walletAddrObj) {
+    if (!connected || !walletAddr || !senderAddress || !walletProvider) {
       setError('Wallet not connected');
       return;
     }
@@ -35,13 +53,14 @@ export function useIndexActions(): IndexActions {
     try {
       setError(null);
 
-      // Step 1: Approve MOTO spend on the index contract
-      setState('approving');
       const motoAddr = hexToAddress(MOTO_ADDRESS);
       const indexAddr = hexToAddress(indexAddress);
-      const motoContract = getContract(motoAddr, OP_20_ABI, provider, NETWORK, walletAddrObj);
+
+      // Step 1: Approve MOTO spend on the index contract
+      setState('approving');
+      const motoContract = getContract(motoAddr, OP_20_ABI, walletProvider, NETWORK, senderAddress);
       const approveSim = await (motoContract as any).increaseAllowance(indexAddr, motoAmount);
-      if (approveSim.revert) throw new Error(`Approval reverted: ${approveSim.revert}`);
+      if (approveSim.revert) throw new Error(`Approval simulation failed: ${approveSim.revert}`);
 
       const approveReceipt = await approveSim.sendTransaction({
         signer: null,
@@ -51,17 +70,22 @@ export function useIndexActions(): IndexActions {
         network: NETWORK,
       });
 
+      const approveTxId = approveReceipt?.transactionId;
+      if (!approveTxId) throw new Error('Approval TX failed — no transaction ID returned');
+
       toast('Approval sent. Waiting for confirmation...', 'info');
-      setState('waiting');
 
-      // Wait for block confirmation before invest (OPNet TX chaining doesn't work)
-      await new Promise((resolve) => setTimeout(resolve, 35_000));
+      // Step 2: Wait for approval TX to confirm on-chain
+      setState('confirming');
+      await waitForConfirmation(walletProvider, approveTxId);
 
-      // Step 2: Invest
+      toast('Approval confirmed. Investing...', 'info');
+
+      // Step 3: Invest
       setState('simulating');
-      const indexContract = getContract(indexAddr, INDEX_TOKEN_ABI, provider, NETWORK, walletAddrObj);
+      const indexContract = getContract(indexAddr, INDEX_TOKEN_ABI, walletProvider, NETWORK, senderAddress);
       const investSim = await (indexContract as any).invest(motoAmount, minSharesOut);
-      if (investSim.revert) throw new Error(`Invest reverted: ${investSim.revert}`);
+      if (investSim.revert) throw new Error(`Invest simulation failed: ${investSim.revert}`);
 
       setState('sending');
       const txResult = await investSim.sendTransaction({
@@ -90,10 +114,10 @@ export function useIndexActions(): IndexActions {
     } finally {
       setState('idle');
     }
-  }, [provider, connected, walletAddr, walletAddrObj, toast, addTx]);
+  }, [walletProvider, connected, walletAddr, senderAddress, toast, addTx]);
 
   const redeem = useCallback(async (indexAddress: string, shareAmount: bigint, minMotoOut: bigint) => {
-    if (!connected || !walletAddr || !walletAddrObj) {
+    if (!connected || !walletAddr || !senderAddress || !walletProvider) {
       setError('Wallet not connected');
       return;
     }
@@ -103,9 +127,9 @@ export function useIndexActions(): IndexActions {
       setState('simulating');
 
       const indexAddr = hexToAddress(indexAddress);
-      const indexContract = getContract(indexAddr, INDEX_TOKEN_ABI, provider, NETWORK, walletAddrObj);
+      const indexContract = getContract(indexAddr, INDEX_TOKEN_ABI, walletProvider, NETWORK, senderAddress);
       const redeemSim = await (indexContract as any).redeem(shareAmount, minMotoOut);
-      if (redeemSim.revert) throw new Error(`Redeem reverted: ${redeemSim.revert}`);
+      if (redeemSim.revert) throw new Error(`Redeem simulation failed: ${redeemSim.revert}`);
 
       setState('sending');
       const txResult = await redeemSim.sendTransaction({
@@ -134,7 +158,7 @@ export function useIndexActions(): IndexActions {
     } finally {
       setState('idle');
     }
-  }, [provider, connected, walletAddr, walletAddrObj, toast, addTx]);
+  }, [walletProvider, connected, walletAddr, senderAddress, toast, addTx]);
 
   return { invest, redeem, state, error };
 }

@@ -3,7 +3,7 @@ import { getContract } from 'opnet';
 import { useProvider } from './useProvider';
 import { useWallet } from './useWallet';
 import { INDEX_TOKEN_ABI } from '../config/abi';
-import { hexToP2OP } from '../lib/address';
+import { hexToAddress } from '../lib/address';
 import { NETWORK } from '../config/network';
 import { useToast } from '../components/ui/Toast';
 
@@ -21,7 +21,8 @@ export function useRebalance() {
 
     try {
       setLoading(true);
-      const contract = getContract(hexToP2OP(indexAddress), INDEX_TOKEN_ABI, provider, NETWORK);
+      const indexAddr = hexToAddress(indexAddress);
+      const contract = getContract(indexAddr, INDEX_TOKEN_ABI, provider, NETWORK);
       const sim = await (contract as any).rebalance();
       if (sim.revert) throw new Error(`Rebalance reverted: ${sim.revert}`);
 
@@ -46,7 +47,8 @@ export function useRebalance() {
 
     try {
       setLoading(true);
-      const contract = getContract(hexToP2OP(indexAddress), INDEX_TOKEN_ABI, provider, NETWORK);
+      const indexAddr = hexToAddress(indexAddress);
+      const contract = getContract(indexAddr, INDEX_TOKEN_ABI, provider, NETWORK);
       const sim = await (contract as any).updateWeights(BigInt(weights.length), weights);
       if (sim.revert) throw new Error(`Update weights reverted: ${sim.revert}`);
 

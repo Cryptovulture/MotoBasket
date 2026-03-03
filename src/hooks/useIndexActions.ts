@@ -4,7 +4,7 @@ import { useProvider } from './useProvider';
 import { useWallet } from './useWallet';
 import { MOTO_ADDRESS } from '../config/tokens';
 import { INDEX_TOKEN_ABI } from '../config/abi';
-import { hexToP2OP } from '../lib/address';
+import { hexToAddress } from '../lib/address';
 import { NETWORK } from '../config/network';
 import { useToast } from '../components/ui/Toast';
 import { useTxTracker } from './useTxTracker';
@@ -37,10 +37,10 @@ export function useIndexActions(): IndexActions {
 
       // Step 1: Approve MOTO spend on the index contract
       setState('approving');
-      const motoP2op = hexToP2OP(MOTO_ADDRESS);
-      const indexP2op = hexToP2OP(indexAddress);
-      const motoContract = getContract(motoP2op, OP_20_ABI, provider, NETWORK);
-      const approveSim = await (motoContract as any).increaseAllowance(indexP2op, motoAmount);
+      const motoAddr = hexToAddress(MOTO_ADDRESS);
+      const indexAddr = hexToAddress(indexAddress);
+      const motoContract = getContract(motoAddr, OP_20_ABI, provider, NETWORK);
+      const approveSim = await (motoContract as any).increaseAllowance(indexAddr, motoAmount);
       if (approveSim.revert) throw new Error(`Approval reverted: ${approveSim.revert}`);
 
       const approveReceipt = await approveSim.sendTransaction({
@@ -59,7 +59,7 @@ export function useIndexActions(): IndexActions {
 
       // Step 2: Invest
       setState('simulating');
-      const indexContract = getContract(indexP2op, INDEX_TOKEN_ABI, provider, NETWORK);
+      const indexContract = getContract(indexAddr, INDEX_TOKEN_ABI, provider, NETWORK);
       const investSim = await (indexContract as any).invest(motoAmount, minSharesOut);
       if (investSim.revert) throw new Error(`Invest reverted: ${investSim.revert}`);
 
@@ -102,8 +102,8 @@ export function useIndexActions(): IndexActions {
       setError(null);
       setState('simulating');
 
-      const indexP2op = hexToP2OP(indexAddress);
-      const indexContract = getContract(indexP2op, INDEX_TOKEN_ABI, provider, NETWORK);
+      const indexAddr = hexToAddress(indexAddress);
+      const indexContract = getContract(indexAddr, INDEX_TOKEN_ABI, provider, NETWORK);
       const redeemSim = await (indexContract as any).redeem(shareAmount, minMotoOut);
       if (redeemSim.revert) throw new Error(`Redeem reverted: ${redeemSim.revert}`);
 

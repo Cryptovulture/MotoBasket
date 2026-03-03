@@ -9,7 +9,7 @@ import { useToast } from '../components/ui/Toast';
 
 export function useRebalance() {
   const provider = useProvider();
-  const { address: walletAddr } = useWallet();
+  const { address: walletAddr, addressObj: walletAddrObj } = useWallet();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
 
@@ -22,7 +22,7 @@ export function useRebalance() {
     try {
       setLoading(true);
       const indexAddr = hexToAddress(indexAddress);
-      const contract = getContract(indexAddr, INDEX_TOKEN_ABI, provider, NETWORK);
+      const contract = getContract(indexAddr, INDEX_TOKEN_ABI, provider, NETWORK, walletAddrObj ?? undefined);
       const sim = await (contract as any).rebalance();
       if (sim.revert) throw new Error(`Rebalance reverted: ${sim.revert}`);
 
@@ -40,7 +40,7 @@ export function useRebalance() {
     } finally {
       setLoading(false);
     }
-  }, [provider, walletAddr, toast]);
+  }, [provider, walletAddr, walletAddrObj, toast]);
 
   const updateWeights = useCallback(async (indexAddress: string, weights: bigint[]) => {
     if (!walletAddr) return;
@@ -48,7 +48,7 @@ export function useRebalance() {
     try {
       setLoading(true);
       const indexAddr = hexToAddress(indexAddress);
-      const contract = getContract(indexAddr, INDEX_TOKEN_ABI, provider, NETWORK);
+      const contract = getContract(indexAddr, INDEX_TOKEN_ABI, provider, NETWORK, walletAddrObj ?? undefined);
       const sim = await (contract as any).updateWeights(BigInt(weights.length), weights);
       if (sim.revert) throw new Error(`Update weights reverted: ${sim.revert}`);
 
@@ -66,7 +66,7 @@ export function useRebalance() {
     } finally {
       setLoading(false);
     }
-  }, [provider, walletAddr, toast]);
+  }, [provider, walletAddr, walletAddrObj, toast]);
 
   return { triggerRebalance, updateWeights, loading };
 }

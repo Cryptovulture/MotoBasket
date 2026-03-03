@@ -20,14 +20,14 @@ interface IndexActions {
 
 export function useIndexActions(): IndexActions {
   const provider = useProvider();
-  const { connected, address: walletAddr } = useWallet();
+  const { connected, address: walletAddr, addressObj: walletAddrObj } = useWallet();
   const { toast } = useToast();
   const { addTx } = useTxTracker();
   const [state, setState] = useState<ActionState>('idle');
   const [error, setError] = useState<string | null>(null);
 
   const invest = useCallback(async (indexAddress: string, motoAmount: bigint, minSharesOut: bigint) => {
-    if (!connected || !walletAddr) {
+    if (!connected || !walletAddr || !walletAddrObj) {
       setError('Wallet not connected');
       return;
     }
@@ -39,7 +39,7 @@ export function useIndexActions(): IndexActions {
       setState('approving');
       const motoAddr = hexToAddress(MOTO_ADDRESS);
       const indexAddr = hexToAddress(indexAddress);
-      const motoContract = getContract(motoAddr, OP_20_ABI, provider, NETWORK);
+      const motoContract = getContract(motoAddr, OP_20_ABI, provider, NETWORK, walletAddrObj);
       const approveSim = await (motoContract as any).increaseAllowance(indexAddr, motoAmount);
       if (approveSim.revert) throw new Error(`Approval reverted: ${approveSim.revert}`);
 
@@ -59,7 +59,7 @@ export function useIndexActions(): IndexActions {
 
       // Step 2: Invest
       setState('simulating');
-      const indexContract = getContract(indexAddr, INDEX_TOKEN_ABI, provider, NETWORK);
+      const indexContract = getContract(indexAddr, INDEX_TOKEN_ABI, provider, NETWORK, walletAddrObj);
       const investSim = await (indexContract as any).invest(motoAmount, minSharesOut);
       if (investSim.revert) throw new Error(`Invest reverted: ${investSim.revert}`);
 
@@ -90,10 +90,10 @@ export function useIndexActions(): IndexActions {
     } finally {
       setState('idle');
     }
-  }, [provider, connected, walletAddr, toast, addTx]);
+  }, [provider, connected, walletAddr, walletAddrObj, toast, addTx]);
 
   const redeem = useCallback(async (indexAddress: string, shareAmount: bigint, minMotoOut: bigint) => {
-    if (!connected || !walletAddr) {
+    if (!connected || !walletAddr || !walletAddrObj) {
       setError('Wallet not connected');
       return;
     }
@@ -103,7 +103,7 @@ export function useIndexActions(): IndexActions {
       setState('simulating');
 
       const indexAddr = hexToAddress(indexAddress);
-      const indexContract = getContract(indexAddr, INDEX_TOKEN_ABI, provider, NETWORK);
+      const indexContract = getContract(indexAddr, INDEX_TOKEN_ABI, provider, NETWORK, walletAddrObj);
       const redeemSim = await (indexContract as any).redeem(shareAmount, minMotoOut);
       if (redeemSim.revert) throw new Error(`Redeem reverted: ${redeemSim.revert}`);
 
@@ -134,7 +134,7 @@ export function useIndexActions(): IndexActions {
     } finally {
       setState('idle');
     }
-  }, [provider, connected, walletAddr, toast, addTx]);
+  }, [provider, connected, walletAddr, walletAddrObj, toast, addTx]);
 
   return { invest, redeem, state, error };
 }

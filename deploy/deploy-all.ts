@@ -1,5 +1,5 @@
 /**
- * MotoBasket — Deploy all 3 IndexToken contracts sequentially.
+ * MotoBasket — Deploy all 10 IndexToken contracts sequentially.
  * Waits for each to confirm before deploying the next.
  * Auto-updates src/config/indexes.ts with new addresses.
  *
@@ -8,7 +8,6 @@
 
 import fs from 'fs';
 import path from 'path';
-import { createHash } from 'crypto';
 import { fileURLToPath } from 'url';
 import * as bip39 from 'bip39';
 import BIP32Factory from '@btc-vision/bip32';
@@ -37,61 +36,149 @@ const EC_PATH = "m/86'/0'/0'/0/0";
 
 // ── Contract addresses ──────────────────────────────────────────────
 const MOTO_TOKEN = '0xfd4473840751d58d9f8b73bdd57d6c5260453d5518bd7cd02d0a4cf3df9bf4dd';
+const ZERO_ADDRESS = '0x' + '0'.repeat(64);
 
 // ── Pre-queried pair addresses (MOTO/<token> from MotoSwap Factory) ──
 const PAIRS: Record<string, string> = {
+  // AI tokens
   '0xaaf45d2ce96330c48a86f6e45d1f666d38f84c39c3cbb0db379ce806a91ed86f': '0x528352dc4b0b8aea18e9a9a92378f75390ede88d17e0bde754c9d2c822599c5c', // NRNA
   '0x8065620da70e8b7d8b0aa2a896fa18906586a944e668232d5ecafa86d921d16c': '0x65ac96f5e99e0109c20e606d74f2b1ad3d200378c5f5485aa18f3fb9ad50fec1', // SYNP
   '0xf624187e93ae18b6d83dd9e68c41670205de6c144b447ec81e40b64865d48b8c': '0x9a3a20391f916ff18040ac9c29889bd59ef4a7f27aa74e1f57aef78a36148f5c', // CRTX
   '0x5a7b2df0a29c92baae7d8a4209f4949190882f56722f690b75a14083d53b4df7': '0x270063d920c1bbfa19edacc563e41d268f7ed63f067ced86422479ecac2a1833', // DPLR
   '0x47a65def2d5a80332f1a40b3af90d8c8973fd5cb604d458d7eb1714614cb8940': '0x236453461cb8ecb2e2c384921a28cdcaa4089b90b116686ed647d7081bffa419', // CPHR
+  // Meme tokens
   '0x2495973eca6972620d9565e4236bd966d8723fb36911c0e3e84bc6ef6201c2d6': '0xa6fd538786d91ce70013fa71489219db91b2ebc575e301ed3a45a9a6bcc7f14f', // PEEP
   '0x24550d41f446261c3091fb2dad64a62f9065398650e238e2338a22b3bd7a2e22': '0x73ca3b95ae58eb57f18467c6c0670c33664970a5ce5fa9c3cc615cf7242064c4', // DGEN
   '0x07ec6eb7dd1c071053d390053ea60dfad0a39dc86f84bbd5ba95d7d858789258': '0x76455b069d8f06fbd13ddb5a07581470b891dfe13467551aa0ec94d9aece23aa', // BONQ
   '0x274cca66f076864b97a29e1001275c69d48eaad9c4eda460f58914e005f8f383': '0x7d674c47e2dbd7c666e793c1e89834fa5573bbeda31253189092a95d0828a665', // SHBA
+  // DeFi tokens
   '0xb3640fd16d44469af46ec74097917d3cf16feb28715b8cd8304ce09245d66c18': '0x05e4f00e89056c295565340e4b238a685dedcfc49a4b0b8b025b620a0af96d85', // LNDB
   '0x7cadb62baf8d683e04adb3830ae2d273ebe2748df1b68a7d7320d6110050111b': '0x58a1da36149de67c55c483f7c2ba18dd83b1636b4bea363a99b9f30caca8eaa3', // YLDP
   '0x589239855469f983c69a31820cd0472eb4f10e585ff215926533dd650a779f46': '0x5f9531cf52a2f484e6804f1c34c92a4faacb0fb41b7a95355cdb25d0d8d95b03', // SWPX
   '0xc70a38244ec57b52cb2c52b4d1d5d8976bd40e6c3fb95c9aca8f0291604b6e04': '0x032ee52958b133ceeb5b1249f2094060ac655c5e897adb3399a702023fb627e0', // NEBL
+  // Infrastructure tokens
+  '0xceca13106b88822d06f8ff1fea5fbe15a60d361ba494170efb3c7d6025bd209d': '0x49fecff9b403535887b59ca3350003ab27c2c4e56de5805a431e7e03697302dc', // WBTC
+  '0xc341404b364262579db4b31276a94f76190b3c24847f1aa5744e593f6c2f6018': '0xca9520723e4d9da1be0d5605650cc803e49ff1240df255b346f5c1c41460d06a', // STSH
+  '0x4332dafd738b89df51e0c75fb8a1d303e6b542b76f014b2daa4f93d5aabc6d53': '0xb3544fe76741442b5399d3a926047fb82b7e36f3c8b0fea7628793ce7323e978', // PILL
+  '0xe7817ac350ece2b586869aced8b3cb70b1a1108fd6798d44fc629bbff355b514': '0x2c3970839a8344b06d2e27aa6555c03f306935091ec33a83bb4c97bc8c2cbd83', // STR8
+  // Gaming tokens
+  '0xd489377d4a9a64ccec90996ad4027fb8b824835b875e7d55d864030fdf4c32ce': '0xff53be752b1cda125c0bde66c053d23c2d1a3dbc88f45409e5694eccd76b4e2c', // MNGO
+  '0x3f8661627f0d0570f5a3c51be4b80e6e3b5e3e71e1f8f8faa567645987345c27': '0x4590e4e366148b089d306d103175a5a1c94556b8a8f29000b7dcb59c67a2c2b5', // APPL
+  '0x1694edcd0df9053bb9fe8b1ccef3057451a08426e888acb9cf2fe9306f0f46fd': '0x628a40caebd50b15df22b9ae9387042ddae166c8c4390777678bf52da14789b6', // AVDO
+  '0x3ca2249304ce3ac49c8cadc633f3cc5e02896fc46d30ab44fb91d974ed18f9c1': '0x330fa0e57ffee21f2829515cb4c47ef2772f26b17167311dd7cf42506ce2df62', // BERY
 };
 
 // ── Index definitions ───────────────────────────────────────────────
 interface IndexDef {
   name: string;
   symbol: string;
+  curatorAddr?: string; // defaults to ZERO_ADDRESS
   components: { address: string; weightBps: number }[];
 }
 
 const INDEXES: IndexDef[] = [
+  // ── Category Indexes (5) ──
   {
     name: 'OPNet AI Index',
     symbol: 'OPAI',
     components: [
-      { address: '0xaaf45d2ce96330c48a86f6e45d1f666d38f84c39c3cbb0db379ce806a91ed86f', weightBps: 2000 },
-      { address: '0x8065620da70e8b7d8b0aa2a896fa18906586a944e668232d5ecafa86d921d16c', weightBps: 2000 },
-      { address: '0xf624187e93ae18b6d83dd9e68c41670205de6c144b447ec81e40b64865d48b8c', weightBps: 2000 },
-      { address: '0x5a7b2df0a29c92baae7d8a4209f4949190882f56722f690b75a14083d53b4df7', weightBps: 2000 },
-      { address: '0x47a65def2d5a80332f1a40b3af90d8c8973fd5cb604d458d7eb1714614cb8940', weightBps: 2000 },
+      { address: '0xaaf45d2ce96330c48a86f6e45d1f666d38f84c39c3cbb0db379ce806a91ed86f', weightBps: 2000 }, // NRNA
+      { address: '0x8065620da70e8b7d8b0aa2a896fa18906586a944e668232d5ecafa86d921d16c', weightBps: 2000 }, // SYNP
+      { address: '0xf624187e93ae18b6d83dd9e68c41670205de6c144b447ec81e40b64865d48b8c', weightBps: 2000 }, // CRTX
+      { address: '0x5a7b2df0a29c92baae7d8a4209f4949190882f56722f690b75a14083d53b4df7', weightBps: 2000 }, // DPLR
+      { address: '0x47a65def2d5a80332f1a40b3af90d8c8973fd5cb604d458d7eb1714614cb8940', weightBps: 2000 }, // CPHR
     ],
   },
   {
     name: 'OPNet Meme Index',
     symbol: 'OPMEME',
     components: [
-      { address: '0x2495973eca6972620d9565e4236bd966d8723fb36911c0e3e84bc6ef6201c2d6', weightBps: 2500 },
-      { address: '0x24550d41f446261c3091fb2dad64a62f9065398650e238e2338a22b3bd7a2e22', weightBps: 2500 },
-      { address: '0x07ec6eb7dd1c071053d390053ea60dfad0a39dc86f84bbd5ba95d7d858789258', weightBps: 2500 },
-      { address: '0x274cca66f076864b97a29e1001275c69d48eaad9c4eda460f58914e005f8f383', weightBps: 2500 },
+      { address: '0x2495973eca6972620d9565e4236bd966d8723fb36911c0e3e84bc6ef6201c2d6', weightBps: 2500 }, // PEEP
+      { address: '0x24550d41f446261c3091fb2dad64a62f9065398650e238e2338a22b3bd7a2e22', weightBps: 2500 }, // DGEN
+      { address: '0x07ec6eb7dd1c071053d390053ea60dfad0a39dc86f84bbd5ba95d7d858789258', weightBps: 2500 }, // BONQ
+      { address: '0x274cca66f076864b97a29e1001275c69d48eaad9c4eda460f58914e005f8f383', weightBps: 2500 }, // SHBA
     ],
   },
   {
     name: 'OPNet DeFi Index',
     symbol: 'OPDEFI',
     components: [
-      { address: '0xb3640fd16d44469af46ec74097917d3cf16feb28715b8cd8304ce09245d66c18', weightBps: 2500 },
-      { address: '0x7cadb62baf8d683e04adb3830ae2d273ebe2748df1b68a7d7320d6110050111b', weightBps: 2500 },
-      { address: '0x589239855469f983c69a31820cd0472eb4f10e585ff215926533dd650a779f46', weightBps: 2500 },
-      { address: '0xc70a38244ec57b52cb2c52b4d1d5d8976bd40e6c3fb95c9aca8f0291604b6e04', weightBps: 2500 },
+      { address: '0xb3640fd16d44469af46ec74097917d3cf16feb28715b8cd8304ce09245d66c18', weightBps: 2500 }, // LNDB
+      { address: '0x7cadb62baf8d683e04adb3830ae2d273ebe2748df1b68a7d7320d6110050111b', weightBps: 2500 }, // YLDP
+      { address: '0x589239855469f983c69a31820cd0472eb4f10e585ff215926533dd650a779f46', weightBps: 2500 }, // SWPX
+      { address: '0xc70a38244ec57b52cb2c52b4d1d5d8976bd40e6c3fb95c9aca8f0291604b6e04', weightBps: 2500 }, // NEBL
+    ],
+  },
+  {
+    name: 'OPNet Gaming Index',
+    symbol: 'OPGAME',
+    components: [
+      { address: '0xd489377d4a9a64ccec90996ad4027fb8b824835b875e7d55d864030fdf4c32ce', weightBps: 2500 }, // MNGO
+      { address: '0x3f8661627f0d0570f5a3c51be4b80e6e3b5e3e71e1f8f8faa567645987345c27', weightBps: 2500 }, // APPL
+      { address: '0x1694edcd0df9053bb9fe8b1ccef3057451a08426e888acb9cf2fe9306f0f46fd', weightBps: 2500 }, // AVDO
+      { address: '0x3ca2249304ce3ac49c8cadc633f3cc5e02896fc46d30ab44fb91d974ed18f9c1', weightBps: 2500 }, // BERY
+    ],
+  },
+  {
+    name: 'OPNet Infra Index',
+    symbol: 'OPINFRA',
+    components: [
+      { address: '0xceca13106b88822d06f8ff1fea5fbe15a60d361ba494170efb3c7d6025bd209d', weightBps: 2500 }, // WBTC
+      { address: '0xc341404b364262579db4b31276a94f76190b3c24847f1aa5744e593f6c2f6018', weightBps: 2500 }, // STSH
+      { address: '0x4332dafd738b89df51e0c75fb8a1d303e6b542b76f014b2daa4f93d5aabc6d53', weightBps: 2500 }, // PILL
+      { address: '0xe7817ac350ece2b586869aced8b3cb70b1a1108fd6798d44fc629bbff355b514', weightBps: 2500 }, // STR8
+    ],
+  },
+  // ── Expert Indexes (5) ──
+  {
+    name: 'Ansem AI Conviction',
+    symbol: 'ANSEM',
+    components: [
+      { address: '0xaaf45d2ce96330c48a86f6e45d1f666d38f84c39c3cbb0db379ce806a91ed86f', weightBps: 3000 }, // NRNA
+      { address: '0xf624187e93ae18b6d83dd9e68c41670205de6c144b447ec81e40b64865d48b8c', weightBps: 2500 }, // CRTX
+      { address: '0x8065620da70e8b7d8b0aa2a896fa18906586a944e668232d5ecafa86d921d16c', weightBps: 2000 }, // SYNP
+      { address: '0x5a7b2df0a29c92baae7d8a4209f4949190882f56722f690b75a14083d53b4df7', weightBps: 1500 }, // DPLR
+      { address: '0x47a65def2d5a80332f1a40b3af90d8c8973fd5cb604d458d7eb1714614cb8940', weightBps: 1000 }, // CPHR
+    ],
+  },
+  {
+    name: 'Chad Degen Plays',
+    symbol: 'CHAD',
+    components: [
+      { address: '0x2495973eca6972620d9565e4236bd966d8723fb36911c0e3e84bc6ef6201c2d6', weightBps: 3000 }, // PEEP
+      { address: '0x24550d41f446261c3091fb2dad64a62f9065398650e238e2338a22b3bd7a2e22', weightBps: 3000 }, // DGEN
+      { address: '0x07ec6eb7dd1c071053d390053ea60dfad0a39dc86f84bbd5ba95d7d858789258', weightBps: 2000 }, // BONQ
+      { address: '0x274cca66f076864b97a29e1001275c69d48eaad9c4eda460f58914e005f8f383', weightBps: 2000 }, // SHBA
+    ],
+  },
+  {
+    name: 'OpDanny Alpha',
+    symbol: 'DANNY',
+    components: [
+      { address: '0xaaf45d2ce96330c48a86f6e45d1f666d38f84c39c3cbb0db379ce806a91ed86f', weightBps: 3000 }, // NRNA
+      { address: '0x24550d41f446261c3091fb2dad64a62f9065398650e238e2338a22b3bd7a2e22', weightBps: 2500 }, // DGEN
+      { address: '0x7cadb62baf8d683e04adb3830ae2d273ebe2748df1b68a7d7320d6110050111b', weightBps: 2500 }, // YLDP
+      { address: '0x47a65def2d5a80332f1a40b3af90d8c8973fd5cb604d458d7eb1714614cb8940', weightBps: 2000 }, // CPHR
+    ],
+  },
+  {
+    name: 'GCR DeFi Infra',
+    symbol: 'GCR',
+    components: [
+      { address: '0xb3640fd16d44469af46ec74097917d3cf16feb28715b8cd8304ce09245d66c18', weightBps: 2500 }, // LNDB
+      { address: '0x7cadb62baf8d683e04adb3830ae2d273ebe2748df1b68a7d7320d6110050111b', weightBps: 2500 }, // YLDP
+      { address: '0xceca13106b88822d06f8ff1fea5fbe15a60d361ba494170efb3c7d6025bd209d', weightBps: 2500 }, // WBTC
+      { address: '0xc341404b364262579db4b31276a94f76190b3c24847f1aa5744e593f6c2f6018', weightBps: 2500 }, // STSH
+    ],
+  },
+  {
+    name: 'Vulture Deep Value',
+    symbol: 'VULTURE',
+    components: [
+      { address: '0x4332dafd738b89df51e0c75fb8a1d303e6b542b76f014b2daa4f93d5aabc6d53', weightBps: 2500 }, // PILL
+      { address: '0xe7817ac350ece2b586869aced8b3cb70b1a1108fd6798d44fc629bbff355b514', weightBps: 2500 }, // STR8
+      { address: '0xc70a38244ec57b52cb2c52b4d1d5d8976bd40e6c3fb95c9aca8f0291604b6e04', weightBps: 2500 }, // NEBL
+      { address: '0x589239855469f983c69a31820cd0472eb4f10e585ff215926533dd650a779f46', weightBps: 2500 }, // SWPX
     ],
   },
 ];
@@ -104,6 +191,7 @@ function buildCalldata(def: IndexDef): Uint8Array {
   writer.writeStringWithLength(def.name);
   writer.writeStringWithLength(def.symbol);
   writer.writeAddress(Address.fromString(MOTO_TOKEN));
+  writer.writeAddress(Address.fromString(def.curatorAddr ?? ZERO_ADDRESS));
   writer.writeU256(BigInt(def.components.length));
 
   for (const comp of def.components) {
@@ -165,9 +253,18 @@ async function waitForConfirmation(hexAddr: string, maxAttempts = 40): Promise<b
 // ── Main ────────────────────────────────────────────────────────────
 
 async function main() {
+  // Optional: deploy only specific indexes by passing symbols as args
+  // e.g.: npx tsx deploy-all.ts OPAI OPMEME
+  const filterSymbols = process.argv.slice(2).map(s => s.toUpperCase());
+  const toDeploy = filterSymbols.length > 0
+    ? INDEXES.filter(d => filterSymbols.includes(d.symbol))
+    : INDEXES;
+
   console.log('\n========================================');
-  console.log('  MotoBasket V11 — Deploy All Indexes (token0 query fix)');
+  console.log('  MotoBasket V12 — Deploy IndexToken Contracts');
+  console.log('  (direct transferFrom fix for Motoswap K)');
   console.log('========================================\n');
+  console.log(`Deploying ${toDeploy.length} index(es): ${toDeploy.map(d => d.symbol).join(', ')}\n`);
 
   const { signer, mldsaSigner, p2tr } = deriveWallet();
   console.log('Deployer:', p2tr);
@@ -185,9 +282,9 @@ async function main() {
 
   const results: { symbol: string; hexAddr: string }[] = [];
 
-  for (let idx = 0; idx < INDEXES.length; idx++) {
-    const def = INDEXES[idx];
-    console.log(`\n--- [${idx + 1}/${INDEXES.length}] Deploying ${def.symbol} ---`);
+  for (let idx = 0; idx < toDeploy.length; idx++) {
+    const def = toDeploy[idx];
+    console.log(`\n--- [${idx + 1}/${toDeploy.length}] Deploying ${def.symbol} ---`);
 
     const calldata = buildCalldata(def);
     console.log(`  Calldata: ${calldata.length} bytes`);
@@ -239,7 +336,7 @@ async function main() {
     results.push({ symbol: def.symbol, hexAddr });
 
     // Wait for confirmation before next deployment
-    if (idx < INDEXES.length - 1) {
+    if (idx < toDeploy.length - 1) {
       console.log('  Waiting for block confirmation...');
       const confirmed = await waitForConfirmation(hexAddr);
       if (confirmed) {
@@ -263,16 +360,15 @@ async function main() {
   let indexesSrc = fs.readFileSync(indexesPath, 'utf-8');
 
   for (const r of results) {
-    // Find the index config by symbol and replace its address
-    const symbolPattern = new RegExp(
-      `(symbol:\\s*'${r.symbol}'[\\s\\S]*?address:\\s*')([^']*)(')`,
-    );
+    // Find the index config by symbol and replace the address on the line before it.
+    // Structure is: address: '0x...', \n    name: '...', \n    symbol: 'OPAI',
+    // Use a tight pattern: address line, then name line, then symbol line.
     const addressPattern = new RegExp(
-      `(address:\\s*')([^']*?)'([\\s\\S]*?symbol:\\s*'${r.symbol}')`,
+      `(address:\\s*')[^']*('(?:,|\\s)*\\n\\s*name:.*\\n\\s*symbol:\\s*'${r.symbol}')`,
     );
 
     if (addressPattern.test(indexesSrc)) {
-      indexesSrc = indexesSrc.replace(addressPattern, `$1${r.hexAddr}'$3`);
+      indexesSrc = indexesSrc.replace(addressPattern, `$1${r.hexAddr}$2`);
       console.log(`  Updated ${r.symbol} address in indexes.ts`);
     } else {
       console.log(`  Could not auto-update ${r.symbol} — manual update needed: ${r.hexAddr}`);

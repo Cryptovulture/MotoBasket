@@ -14,7 +14,7 @@ export const INDEX_TOKEN_ABI: typeof OP_20_ABI = [
       { name: 'motoAmount', type: U256 },
       { name: 'minSharesOut', type: U256 },
     ],
-    outputs: [{ name: 'sharesMinted', type: U256 }],
+    outputs: [], // OPNet simulation returns 1-byte result; SDK can't decode uint256
     type: F,
   },
   {
@@ -23,7 +23,7 @@ export const INDEX_TOKEN_ABI: typeof OP_20_ABI = [
       { name: 'shareAmount', type: U256 },
       { name: 'minMotoOut', type: U256 },
     ],
-    outputs: [{ name: 'motoReturned', type: U256 }],
+    outputs: [], // same as invest — empty outputs to avoid decode crash
     type: F,
   },
   {

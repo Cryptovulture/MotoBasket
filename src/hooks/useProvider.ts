@@ -5,7 +5,7 @@ import { RPC_URL, NETWORK } from '../config/network';
 // Singleton provider — shared across all hooks
 let providerInstance: JSONRpcProvider | null = null;
 
-function getProvider(): JSONRpcProvider {
+export function getProvider(): JSONRpcProvider {
   if (!providerInstance) {
     providerInstance = new JSONRpcProvider({ url: RPC_URL, network: NETWORK });
   }

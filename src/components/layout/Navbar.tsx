@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { clsx } from 'clsx';
 import { Button } from '../ui/Button';
 import { useWallet } from '../../hooks/useWallet';
 import { useBlockInfo } from '../../hooks/useBlockInfo';
+import { ACTIVE_NETWORK } from '../../config/network';
 
 const NAV_LINKS = [
   { to: '/', label: 'Indexes' },
@@ -17,6 +18,24 @@ export function Navbar() {
   const { address, connected, connect, disconnect } = useWallet();
   const { blockNumber } = useBlockInfo();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [countdown, setCountdown] = useState(30);
+  const lastBlockRef = useRef(blockNumber);
+
+  // Reset countdown when new block arrives
+  useEffect(() => {
+    if (blockNumber > 0 && blockNumber !== lastBlockRef.current) {
+      lastBlockRef.current = blockNumber;
+      setCountdown(30);
+    }
+  }, [blockNumber]);
+
+  // Tick countdown every second
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCountdown((c) => Math.max(0, c - 1));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const shortAddr = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : '';
 
@@ -52,9 +71,18 @@ export function Navbar() {
         {/* Right side */}
         <div className="flex items-center gap-3">
           {blockNumber > 0 && (
-            <div className="hidden sm:flex items-center gap-1.5 text-xs text-dark-400">
+            <div className="hidden sm:flex items-center gap-2 text-xs text-dark-400">
+              <span className={clsx(
+                'px-1.5 py-0.5 rounded font-medium uppercase tracking-wide text-[10px]',
+                ACTIVE_NETWORK === 'testnet'
+                  ? 'bg-yellow-500/15 text-yellow-400'
+                  : 'bg-emerald-500/15 text-emerald-400',
+              )}>
+                {ACTIVE_NETWORK}
+              </span>
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse-slow" />
-              Block {blockNumber.toLocaleString()}
+              <span>#{blockNumber.toLocaleString()}</span>
+              <span className="text-dark-500">~{countdown}s</span>
             </div>
           )}
 

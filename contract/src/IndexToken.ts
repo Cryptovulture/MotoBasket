@@ -34,7 +34,6 @@ const SEL_TRANSFER_FROM: Selector = encodeSelector('transferFrom(address,address
 const SEL_BALANCE_OF: Selector = encodeSelector('balanceOf(address)');
 const SEL_GET_RESERVES: Selector = encodeSelector('getReserves()');
 const SEL_PAIR_SWAP: Selector = encodeSelector('swap(uint256,uint256,address,bytes)');
-const SEL_TOKEN0: Selector = encodeSelector('token0()');
 
 @final
 export class IndexToken extends OP20 {
@@ -206,16 +205,20 @@ export class IndexToken extends OP20 {
             throw new Revert('Below minimum investment');
         }
 
-        // Pull MOTO from sender to this contract
-        this._callTransferFrom(motoAddr, sender, thisAddr, motoAmount);
+        const currentSupply: u256 = this._totalSupply.value;
+        const isFirstInvest: bool = u256.eq(currentSupply, u256.Zero);
 
-        // Record pre-swap balances for each component
-        const preBals: u256[] = new Array<u256>(count);
-        for (let i: u32 = 0; i < count; i++) {
-            preBals[i] = this._callBalanceOfExternal(this._components[i].value, thisAddr);
+        // Only read pre-swap balances when supply > 0 (saves 5 cross-contract calls on first invest)
+        let preBals: u256[] = new Array<u256>(count);
+        if (!isFirstInvest) {
+            for (let i: u32 = 0; i < count; i++) {
+                preBals[i] = this._callBalanceOfExternal(this._components[i].value, thisAddr);
+            }
         }
 
-        // Swap MOTO to each component via direct pair interaction
+        // Swap MOTO to each component via direct pair interaction.
+        // MOTO goes directly from sender to pair (transferFrom) to match
+        // the MotoSwap Router pattern — avoids intermediate state changes.
         for (let i: u32 = 0; i < count; i++) {
             const weight: u256 = this._weights[i].value;
             const portion: u256 = SafeMath.div(SafeMath.mul(motoAmount, weight), WEIGHT_BASIS);
@@ -226,24 +229,25 @@ export class IndexToken extends OP20 {
                     motoAddr,
                     this._components[i].value,
                     this._pairs[i].value,
+                    sender,
                 );
             }
         }
 
-        // Record post-swap balances, compute received amounts
-        const received: u256[] = new Array<u256>(count);
-        for (let i: u32 = 0; i < count; i++) {
-            const postBal: u256 = this._callBalanceOfExternal(this._components[i].value, thisAddr);
-            received[i] = SafeMath.sub(postBal, preBals[i]);
-        }
-
         // Calculate shares to mint
-        const currentSupply: u256 = this._totalSupply.value;
         let shares: u256;
 
-        if (u256.eq(currentSupply, u256.Zero)) {
+        if (isFirstInvest) {
+            // First invest: shares = motoAmount (no balance reads needed)
             shares = motoAmount;
         } else {
+            // Subsequent invests: read post-swap balances and compute proportional shares
+            const received: u256[] = new Array<u256>(count);
+            for (let i: u32 = 0; i < count; i++) {
+                const postBal: u256 = this._callBalanceOfExternal(this._components[i].value, thisAddr);
+                received[i] = SafeMath.sub(postBal, preBals[i]);
+            }
+
             shares = u256.Max;
             for (let i: u32 = 0; i < count; i++) {
                 const existing: u256 = preBals[i];
@@ -324,6 +328,7 @@ export class IndexToken extends OP20 {
                     this._components[i].value,
                     motoAddr,
                     this._pairs[i].value,
+                    thisAddr,
                 );
             }
         }
@@ -363,7 +368,7 @@ export class IndexToken extends OP20 {
         for (let i: u32 = 0; i < count; i++) {
             holdings[i] = this._callBalanceOfExternal(this._components[i].value, thisAddr);
 
-            const pairInfo: PairInfo = this._getPairInfo(this._pairs[i].value, motoAddr);
+            const pairInfo: PairInfo = this._getPairInfo(this._pairs[i].value, motoAddr, this._components[i].value);
 
             if (u256.gt(holdings[i], u256.Zero) && u256.gt(pairInfo.reserveComp, u256.Zero)) {
                 motoValues[i] = SafeMath.div(
@@ -388,7 +393,7 @@ export class IndexToken extends OP20 {
             );
             if (u256.gt(motoValues[i], targetValue)) {
                 const excessMoto: u256 = SafeMath.sub(motoValues[i], targetValue);
-                const pairInfo: PairInfo = this._getPairInfo(this._pairs[i].value, motoAddr);
+                const pairInfo: PairInfo = this._getPairInfo(this._pairs[i].value, motoAddr, this._components[i].value);
                 if (u256.gt(pairInfo.reserveMoto, u256.Zero)) {
                     const compToSell: u256 = SafeMath.div(
                         SafeMath.mul(excessMoto, pairInfo.reserveComp),
@@ -400,6 +405,7 @@ export class IndexToken extends OP20 {
                             this._components[i].value,
                             motoAddr,
                             this._pairs[i].value,
+                            thisAddr,
                         );
                     }
                 }
@@ -440,6 +446,7 @@ export class IndexToken extends OP20 {
                                 motoAddr,
                                 this._components[i].value,
                                 this._pairs[i].value,
+                                thisAddr,
                             );
                         }
                     }
@@ -633,18 +640,11 @@ export class IndexToken extends OP20 {
         tokenIn: Address,
         tokenOut: Address,
         pairAddr: Address,
+        from: Address,
     ): void {
-        // 1. Query token0 from the pair
-        const t0Writer: BytesWriter = new BytesWriter(4);
-        t0Writer.writeSelector(SEL_TOKEN0);
-        const t0Result = Blockchain.call(pairAddr, t0Writer, true);
-
-        if (t0Result.data.byteLength < 32) {
-            throw new Revert('token0: response too short');
-        }
-
-        const pairToken0: Address = t0Result.data.readAddress();
-        const tokenInIsToken0: bool = tokenIn.equals(pairToken0);
+        // MotoSwap pairs order token0 = min(tokenA, tokenB) like Uniswap V2.
+        // Compute locally instead of cross-contract call to token0() — saves 1 call per swap.
+        const tokenInIsToken0: bool = tokenIn.lessThan(tokenOut);
 
         // 2. Get reserves from pair
         const resWriter: BytesWriter = new BytesWriter(4);
@@ -681,8 +681,10 @@ export class IndexToken extends OP20 {
             throw new Revert('Insufficient output amount');
         }
 
-        // 4. Transfer input tokens directly to pair contract
-        this._callTransfer(tokenIn, pairAddr, amountIn);
+        // 4. Transfer input tokens to pair contract via transferFrom.
+        // For invest: from=user, sends MOTO directly from user to pair.
+        // For redeem/rebalance: from=this contract, sends component tokens.
+        this._callTransferFrom(tokenIn, from, pairAddr, amountIn);
 
         // 5. Call pair.swap to execute the trade
         let amount0Out: u256;
@@ -706,19 +708,15 @@ export class IndexToken extends OP20 {
 
     // ── Helper: get pair reserves split by MOTO/component ────────────────
 
-    private _getPairInfo(pairAddr: Address, motoAddr: Address): PairInfo {
-        const t0Writer: BytesWriter = new BytesWriter(4);
-        t0Writer.writeSelector(SEL_TOKEN0);
-        const t0Result = Blockchain.call(pairAddr, t0Writer, true);
-        const pairToken0: Address = t0Result.data.readAddress();
-
+    private _getPairInfo(pairAddr: Address, motoAddr: Address, compAddr: Address): PairInfo {
         const resWriter: BytesWriter = new BytesWriter(4);
         resWriter.writeSelector(SEL_GET_RESERVES);
         const resResult = Blockchain.call(pairAddr, resWriter, true);
         const reserve0: u256 = resResult.data.readU256();
         const reserve1: u256 = resResult.data.readU256();
 
-        const motoIsToken0: bool = motoAddr.equals(pairToken0);
+        // MotoSwap: token0 = min(tokenA, tokenB). No cross-contract call needed.
+        const motoIsToken0: bool = motoAddr.lessThan(compAddr);
         return new PairInfo(
             motoIsToken0 ? reserve0 : reserve1,
             motoIsToken0 ? reserve1 : reserve0,

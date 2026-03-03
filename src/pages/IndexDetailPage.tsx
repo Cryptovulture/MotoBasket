@@ -13,6 +13,7 @@ import { useIndexData } from '../hooks/useIndexData';
 import { useIndexActions } from '../hooks/useIndexActions';
 import { useNav } from '../hooks/useNav';
 import { useWallet } from '../hooks/useWallet';
+import { useMotoBalance } from '../hooks/useMotoBalance';
 import { useTxTracker } from '../hooks/useTxTracker';
 import { formatTokenAmount, parseTokenInput, bpsToPercent, toFloat, shortenAddress } from '../lib/format';
 import { EXPLORER_TX_URL, EXPLORER_ADDRESS_URL } from '../config/network';
@@ -25,6 +26,7 @@ export function IndexDetailPage() {
   const { address } = useParams<{ address: string }>();
   const config = getIndexByAddress(address ?? '');
   const { connected, address: walletAddr } = useWallet();
+  const { balance: motoBalance } = useMotoBalance();
 
   // All hooks must be called unconditionally (React rules of hooks)
   const safeConfig = config ?? EMPTY_CONFIG;
@@ -250,6 +252,18 @@ export function IndexDetailPage() {
 
               {tab === 'invest' ? (
                 <>
+                  {connected && motoBalance > 0n && (
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-dark-400">Available</span>
+                      <button
+                        className="font-mono text-bitcoin-400 hover:text-bitcoin-300"
+                        onClick={() => setInvestInput(formatTokenAmount(motoBalance, 18, 6))}
+                      >
+                        {formatTokenAmount(motoBalance, 18, 4)} MOTO
+                        <span className="ml-1.5 text-[10px] uppercase tracking-wide opacity-70">max</span>
+                      </button>
+                    </div>
+                  )}
                   <Input
                     label="MOTO Amount"
                     placeholder="0.00"

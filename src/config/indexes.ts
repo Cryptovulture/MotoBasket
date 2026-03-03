@@ -21,7 +21,7 @@ export interface IndexConfig {
 
 export const CATEGORY_INDEXES: IndexConfig[] = [
   {
-    address: '0x725f25c622f943b50e5f53bb774863a4ad4611ffbbeb3ffc9501c796d7966721',
+    address: '0x1c625456bc60c28d590dc2419ba649a4a8215a21a51454c637410ea580232eb8',
     name: 'OPNet AI Index',
     symbol: 'OPAI',
     category: 'ai',
@@ -35,7 +35,7 @@ export const CATEGORY_INDEXES: IndexConfig[] = [
     ],
   },
   {
-    address: '0xa392f205c01a793c4f35a1ff4b2f45963564280de199ab3b769975d99fc1fe8f',
+    address: '0x2f8c7fb147949a5bc95f6832a1c1ae7446ced4c5a3a7b3270160a3dc5a5836dd',
     name: 'OPNet Meme Index',
     symbol: 'OPMEME',
     category: 'meme',
@@ -48,7 +48,7 @@ export const CATEGORY_INDEXES: IndexConfig[] = [
     ],
   },
   {
-    address: '0x7face6eedcad07524ef8f6c1d21687e5385c2be764f0315c314db978030804db',
+    address: '0xae2575d734f9e6dcba8d2dc8534497b0eed4d563b4ef6360075b2a135400eead',
     name: 'OPNet DeFi Index',
     symbol: 'OPDEFI',
     category: 'defi',
@@ -61,7 +61,7 @@ export const CATEGORY_INDEXES: IndexConfig[] = [
     ],
   },
   {
-    address: '0x99c4e810140e01bb9a7d958c19333bc9ee33e3ddb503bee5ea7752dc929d58a2',
+    address: '0x0e1a2cc9f3c32c6ed08a50f5fa9f0c6fa13624e44d15f932c453c2801e57815c',
     name: 'OPNet Gaming Index',
     symbol: 'OPGAME',
     category: 'gaming',
@@ -74,7 +74,7 @@ export const CATEGORY_INDEXES: IndexConfig[] = [
     ],
   },
   {
-    address: '0x5e40abb52fa1c7c5e388fc5ad95a2810c06d0dde6b2a82bb188ee57c862469e5',
+    address: '0xcc5a01846610a268856b0677ad0550a42f9d81fe04ed757fc39595bd6965bf2c',
     name: 'OPNet Infra Index',
     symbol: 'OPINFRA',
     category: 'infra',
@@ -92,7 +92,7 @@ export const CATEGORY_INDEXES: IndexConfig[] = [
 
 export const EXPERT_INDEXES: IndexConfig[] = [
   {
-    address: '0xc2e5f8d3ad1af23319857960b45344357e289ac1c550c166ace2039c342593c7',
+    address: '0x024379a677871f98836b91eeed15468c2213d7ef3df1e1dbd9303739c9edb5b7',
     name: 'Ansem AI Conviction',
     symbol: 'ANSEM',
     category: 'expert',
@@ -107,7 +107,7 @@ export const EXPERT_INDEXES: IndexConfig[] = [
     ],
   },
   {
-    address: '0x22d5b22edc49fd93a73fd571bfe8fd9a64cdb60c244b4cb5345da3481f6ce043',
+    address: '0xc2d24557a1237cced807b9deb531627a4ac4884063891f63967f093b85c67c65',
     name: 'Chad Degen Plays',
     symbol: 'CHAD',
     category: 'expert',
@@ -121,7 +121,7 @@ export const EXPERT_INDEXES: IndexConfig[] = [
     ],
   },
   {
-    address: '0xfd59e82e16ac39b0f5343df3d3f4d95cb9a21577ee4cb2597c672600e38e143a',
+    address: '0xf1c011543071351c09380fac3fd7844c383ead53d68c9206fdc1bf77029534fe',
     name: 'OpDanny Alpha',
     symbol: 'DANNY',
     category: 'expert',
@@ -135,7 +135,7 @@ export const EXPERT_INDEXES: IndexConfig[] = [
     ],
   },
   {
-    address: '0x7b7d1f1d33cad8cc7b06dbf992f985dcd8896aef8082eb4ab23ca8ffad13c42d',
+    address: '0xf1f84e8794a03e66274fee486fb3602f7b88ae78e725401e5ef17bd75e621a0a',
     name: 'GCR DeFi Infra',
     symbol: 'GCR',
     category: 'expert',
@@ -149,7 +149,7 @@ export const EXPERT_INDEXES: IndexConfig[] = [
     ],
   },
   {
-    address: '0xdf5624ec47b992e91b218244299795df35f0a6aacac1e4c7fef3aef38a08192a',
+    address: '0x03e9be2c2f770cb643021f06bbfa6c32baf6514daf5dfc0bad4099ed854a44ad',
     name: 'Vulture Deep Value',
     symbol: 'VULTURE',
     category: 'expert',

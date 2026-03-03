@@ -17,10 +17,26 @@ import { useTxTracker } from '../hooks/useTxTracker';
 import { formatTokenAmount, parseTokenInput, bpsToPercent, toFloat, shortenAddress } from '../lib/format';
 import { EXPLORER_TX_URL, EXPLORER_ADDRESS_URL } from '../config/network';
 
+const EMPTY_CONFIG: import('../config/indexes').IndexConfig = {
+  address: '', name: '', symbol: '', category: 'ai', description: '', components: [],
+};
+
 export function IndexDetailPage() {
   const { address } = useParams<{ address: string }>();
   const config = getIndexByAddress(address ?? '');
   const { connected, address: walletAddr } = useWallet();
+
+  // All hooks must be called unconditionally (React rules of hooks)
+  const safeConfig = config ?? EMPTY_CONFIG;
+  const { totalSupply, components, loading, error } = useIndexData(safeConfig);
+  const { nav } = useNav(safeConfig, components, totalSupply);
+  const { invest, redeem, state: actionState } = useIndexActions();
+  const { getTxsForIndex } = useTxTracker();
+  const txs = address ? getTxsForIndex(address) : [];
+
+  const [tab, setTab] = useState<'invest' | 'redeem'>('invest');
+  const [investInput, setInvestInput] = useState('');
+  const [redeemInput, setRedeemInput] = useState('');
 
   if (!config || !address) {
     return (
@@ -29,16 +45,6 @@ export function IndexDetailPage() {
       </div>
     );
   }
-
-  const { totalSupply, components, loading, error } = useIndexData(config);
-  const { nav } = useNav(config, components, totalSupply);
-  const { invest, redeem, state: actionState } = useIndexActions();
-  const { getTxsForIndex } = useTxTracker();
-  const txs = getTxsForIndex(address);
-
-  const [tab, setTab] = useState<'invest' | 'redeem'>('invest');
-  const [investInput, setInvestInput] = useState('');
-  const [redeemInput, setRedeemInput] = useState('');
 
   if (loading) {
     return (

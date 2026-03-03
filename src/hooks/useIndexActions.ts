@@ -49,24 +49,37 @@ export function useIndexActions(): IndexActions {
 
       const motoAddr = hexToAddress(MOTO_ADDRESS);
       const indexAddr = hexToAddress(indexAddress);
+      console.log('[invest] MOTO addr:', MOTO_ADDRESS);
+      console.log('[invest] Index addr:', indexAddress);
+      console.log('[invest] Amount:', motoAmount.toString(), 'MinShares:', minSharesOut.toString());
+
       const motoContract = getContract(motoAddr, OP_20_ABI, provider, NETWORK, senderAddress);
 
       // Step 1: Check existing allowance
       setState('approving');
       let needsApproval = true;
       try {
+        console.log('[invest] Checking allowance...');
         const allowanceResult = await (motoContract as any).allowance(senderAddress, indexAddr);
-        if (!allowanceResult.revert && allowanceResult.properties?.remaining >= motoAmount) {
-          needsApproval = false;
+        console.log('[invest] Allowance result:', allowanceResult?.properties);
+        if (!allowanceResult.revert) {
+          const remaining = allowanceResult.properties?.remaining ?? 0n;
+          if (remaining >= motoAmount) {
+            needsApproval = false;
+            console.log('[invest] Allowance sufficient:', remaining.toString());
+          } else {
+            console.log('[invest] Allowance insufficient:', remaining.toString(), '<', motoAmount.toString());
+          }
         }
-      } catch {
-        // If allowance check fails, assume we need approval
+      } catch (e) {
+        console.warn('[invest] Allowance check failed, will request approval:', e);
       }
 
       if (needsApproval) {
-        // Send approval TX — user must click Invest again after it confirms
+        console.log('[invest] Sending increaseAllowance...');
         const approveSim = await (motoContract as any).increaseAllowance(indexAddr, motoAmount);
         if (approveSim.revert) throw new Error(`Approval simulation failed: ${approveSim.revert}`);
+        console.log('[invest] Approval simulation passed, broadcasting...');
 
         const approveReceipt = await approveSim.sendTransaction({
           signer: null,
@@ -78,8 +91,16 @@ export function useIndexActions(): IndexActions {
 
         const approveTxId = approveReceipt?.transactionId;
         if (!approveTxId) throw new Error('Approval TX failed — no transaction ID returned');
+        console.log('[invest] Approval TX sent:', approveTxId);
 
-        toast('Approval TX sent! Wait for it to confirm (~30s), then click Invest again.', 'info');
+        addTx({
+          txid: approveTxId,
+          type: 'invest',
+          indexAddress,
+          amount: '0',
+          timestamp: Date.now(),
+        });
+        toast('Approval TX sent! Wait ~30s for confirmation, then click Invest again.', 'info');
         setState('idle');
         return;
       }
@@ -87,9 +108,11 @@ export function useIndexActions(): IndexActions {
       // Step 2: Allowance is sufficient — invest directly
       toast('Allowance confirmed. Simulating invest...', 'info');
       setState('simulating');
+      console.log('[invest] Simulating invest call...');
       const indexContract = getContract(indexAddr, INDEX_TOKEN_ABI, provider, NETWORK, senderAddress);
       const investSim = await (indexContract as any).invest(motoAmount, minSharesOut);
       if (investSim.revert) throw new Error(`Invest simulation failed: ${investSim.revert}`);
+      console.log('[invest] Simulation passed, broadcasting...');
 
       setState('sending');
       const txResult = await investSim.sendTransaction({
@@ -101,6 +124,7 @@ export function useIndexActions(): IndexActions {
       });
 
       const txid = txResult?.transactionId ?? '';
+      console.log('[invest] TX result:', txid);
       if (txid) {
         addTx({
           txid,
@@ -112,6 +136,7 @@ export function useIndexActions(): IndexActions {
         toast('Investment submitted!', 'success');
       }
     } catch (err) {
+      console.error('[invest] Error:', err);
       const msg = err instanceof Error ? err.message : 'Investment failed';
       setError(msg);
       toast(msg, 'error');
@@ -135,10 +160,12 @@ export function useIndexActions(): IndexActions {
       setState('simulating');
       const provider = getProvider();
 
+      console.log('[redeem] Index:', indexAddress, 'Shares:', shareAmount.toString());
       const indexAddr = hexToAddress(indexAddress);
       const indexContract = getContract(indexAddr, INDEX_TOKEN_ABI, provider, NETWORK, senderAddress);
       const redeemSim = await (indexContract as any).redeem(shareAmount, minMotoOut);
       if (redeemSim.revert) throw new Error(`Redeem simulation failed: ${redeemSim.revert}`);
+      console.log('[redeem] Simulation passed, broadcasting...');
 
       setState('sending');
       const txResult = await redeemSim.sendTransaction({
@@ -150,6 +177,7 @@ export function useIndexActions(): IndexActions {
       });
 
       const txid = txResult?.transactionId ?? '';
+      console.log('[redeem] TX result:', txid);
       if (txid) {
         addTx({
           txid,
@@ -161,6 +189,7 @@ export function useIndexActions(): IndexActions {
         toast('Redemption submitted!', 'success');
       }
     } catch (err) {
+      console.error('[redeem] Error:', err);
       const msg = err instanceof Error ? err.message : 'Redemption failed';
       setError(msg);
       toast(msg, 'error');

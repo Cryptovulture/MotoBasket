@@ -4,7 +4,6 @@ import { ABIDataTypes } from '@btc-vision/transaction';
 const F = BitcoinAbiTypes.Function;
 const U256 = ABIDataTypes.UINT256;
 const ADDR = ABIDataTypes.ADDRESS;
-const AU256 = ABIDataTypes.ARRAY_OF_UINT256;
 
 // IndexToken ABI = OP20 base + custom index methods
 export const INDEX_TOKEN_ABI: typeof OP_20_ABI = [
@@ -37,7 +36,6 @@ export const INDEX_TOKEN_ABI: typeof OP_20_ABI = [
     name: 'updateWeights',
     inputs: [
       { name: 'count', type: U256 },
-      { name: 'weights', type: AU256 },
     ],
     outputs: [],
     type: F,
@@ -63,7 +61,7 @@ export const INDEX_TOKEN_ABI: typeof OP_20_ABI = [
   {
     name: 'getHolding',
     constant: true,
-    inputs: [{ name: 'token', type: ADDR }],
+    inputs: [{ name: 'index', type: U256 }],
     outputs: [{ name: 'amount', type: U256 }],
     type: F,
   },

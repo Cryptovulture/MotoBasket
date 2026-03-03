@@ -69,15 +69,16 @@ export function useIndexData(config: IndexConfig): IndexData {
             const r0 = decodeU256(reservesHex, 0);
             const r1 = decodeU256(reservesHex, 32);
 
-            // Determine which reserve is MOTO by checking token0
+            // Determine which reserve is MOTO by checking token0 from the pair
             const t0Hex = await btcCall(pairAddr, SEL.token0);
             const pairToken0 = decodeAddress(t0Hex, 0);
-            const motoIsTok0 = pairToken0.toLowerCase() === config.components[i]?.address.toLowerCase() ? false : true;
+            // Use the on-chain tokenAddr (not config) for robustness
+            const motoIsTok0 = pairToken0.toLowerCase() !== tokenAddr.toLowerCase();
 
             reserveMoto = motoIsTok0 ? r0 : r1;
             reserveComp = motoIsTok0 ? r1 : r0;
-          } catch {
-            // Pair may not exist yet
+          } catch (e) {
+            console.warn(`[useIndexData] Failed to load reserves for component ${i} (pair ${pairAddr}):`, e);
           }
         }
 

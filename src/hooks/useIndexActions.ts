@@ -9,7 +9,7 @@ import { useToast } from '../components/ui/Toast';
 import { useTxTracker } from './useTxTracker';
 import { getProvider } from './useProvider';
 
-type ActionState = 'idle' | 'approving' | 'simulating' | 'sending';
+type ActionState = 'idle' | 'approving' | 'waiting-approve' | 'simulating' | 'sending';
 
 interface IndexActions {
   invest: (indexAddress: string, motoAmount: bigint, minSharesOut: bigint) => Promise<void>;
@@ -65,16 +65,16 @@ export function useIndexActions(): IndexActions {
         console.warn('[invest] Allowance check failed:', e);
       }
 
-      let approveNewUTXOs: unknown[] | undefined;
-
       if (needsApproval) {
-        // TX1: Approve MOTO spending
-        console.log('[invest] Simulating approve...');
-        const approveSim = await (motoContract as any).increaseAllowance(indexAddr, motoAmount);
+        // Approve a large amount (1M MOTO) so future invests don't need approval.
+        // Must wait for on-chain confirmation before invest simulation can see it.
+        const approveAmount = 1_000_000n * 10n ** 18n;
+        console.log('[invest] Simulating approve (1M MOTO)...');
+        const approveSim = await (motoContract as any).increaseAllowance(indexAddr, approveAmount);
         if (approveSim.revert) throw new Error(`Approval failed: ${approveSim.revert}`);
 
         console.log('[invest] Sending approve TX...');
-        toast('Sending approval...', 'info');
+        toast('Approving MOTO — please confirm in wallet', 'info');
 
         const approveReceipt = await approveSim.sendTransaction({
           signer: null,
@@ -87,21 +87,38 @@ export function useIndexActions(): IndexActions {
         if (!approveReceipt?.transactionId) throw new Error('Approval TX failed — no txid');
         console.log('[invest] Approve TX:', approveReceipt.transactionId);
 
-        // Capture UTXOs for chaining
-        approveNewUTXOs = approveReceipt.newUTXOs;
-        console.log('[invest] Chaining with', approveNewUTXOs?.length ?? 0, 'UTXOs');
+        // Wait for approval to be mined before simulating invest.
+        // The invest simulation reads on-chain allowance — it MUST be confirmed first.
+        setState('waiting-approve');
+        toast('Waiting for approval to confirm (~30s)...', 'info');
+        console.log('[invest] Waiting for approve to mine...');
+
+        const startBlock = await provider.getBlockNumber();
+        const deadline = Date.now() + 180_000; // 3 min max wait
+        let confirmed = false;
+
+        while (Date.now() < deadline) {
+          await new Promise(r => setTimeout(r, 5000));
+          const currentBlock = await provider.getBlockNumber();
+          if (currentBlock > startBlock) {
+            confirmed = true;
+            console.log('[invest] Approve confirmed at block', currentBlock);
+            break;
+          }
+        }
+
+        if (!confirmed) {
+          throw new Error('Approval TX did not confirm in time — try investing again in a minute');
+        }
+
+        toast('Approval confirmed! Investing...', 'success');
       }
 
-      // TX2: Invest (chained immediately — no block wait needed)
+      // Now simulate invest — allowance is on-chain (either pre-existing or just confirmed)
       setState('simulating');
       toast('Simulating invest...', 'info');
 
       const indexContract = getContract(indexAddr, INDEX_TOKEN_ABI, provider, NETWORK, senderAddress);
-
-      // Forward state from approve TX so simulator sees the allowance
-      if (approveNewUTXOs) {
-        (indexContract as any).setTransactionDetails({ inputs: [], outputs: [] });
-      }
 
       console.log('[invest] Simulating invest...');
       const investSim = await (indexContract as any).invest(motoAmount, minSharesOut);
@@ -109,22 +126,16 @@ export function useIndexActions(): IndexActions {
       console.log('[invest] Simulation passed!');
 
       setState('sending');
-      toast('Sending invest TX...', 'info');
+      toast('Sending invest TX — please confirm in wallet', 'info');
 
-      const sendOpts: Record<string, unknown> = {
+      const txResult = await investSim.sendTransaction({
         signer: null,
         mldsaSigner: null,
         refundTo: walletAddr,
         maximumAllowedSatToSpend: 100_000n,
         network: NETWORK,
-      };
+      });
 
-      // Chain UTXO dependency from approve
-      if (approveNewUTXOs) {
-        sendOpts.utxos = approveNewUTXOs;
-      }
-
-      const txResult = await investSim.sendTransaction(sendOpts);
       const txid = txResult?.transactionId ?? '';
       console.log('[invest] TX result:', txid);
 
@@ -136,11 +147,7 @@ export function useIndexActions(): IndexActions {
           amount: motoAmount.toString(),
           timestamp: Date.now(),
         });
-        toast(needsApproval
-          ? 'Approve + Invest sent in one go!'
-          : 'Investment submitted!',
-          'success',
-        );
+        toast('Investment submitted!', 'success');
       }
     } catch (err) {
       console.error('[invest] Error:', err);

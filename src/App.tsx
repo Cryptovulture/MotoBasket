@@ -10,6 +10,7 @@ import { ExpertsPage } from './pages/ExpertsPage';
 import { ExpertDetailPage } from './pages/ExpertDetailPage';
 import { HistoryPage } from './pages/HistoryPage';
 import { AdminPage } from './pages/AdminPage';
+import { TokenomicsPage } from './pages/TokenomicsPage';
 
 function AppContent() {
   return (
@@ -23,6 +24,7 @@ function AppContent() {
             <Route path="/portfolio" element={<PortfolioPage />} />
             <Route path="/experts" element={<ExpertsPage />} />
             <Route path="/expert/:slug" element={<ExpertDetailPage />} />
+            <Route path="/tokenomics" element={<TokenomicsPage />} />
             <Route path="/history" element={<HistoryPage />} />
             <Route path="/admin" element={<AdminPage />} />
           </Routes>

@@ -10,6 +10,7 @@ const NAV_LINKS = [
   { to: '/', label: 'Indexes' },
   { to: '/experts', label: 'Experts' },
   { to: '/portfolio', label: 'Portfolio' },
+  { to: '/tokenomics', label: 'BASKET' },
   { to: '/history', label: 'History' },
 ];
 

@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardHeader, CardBody } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
@@ -7,6 +7,8 @@ import { Input } from '../components/ui/Input';
 import { ProgressBar } from '../components/ui/ProgressBar';
 import { Skeleton, SkeletonCard } from '../components/ui/Skeleton';
 import { StepIndicator } from '../components/ui/StepIndicator';
+import { NavChart } from '../components/charts/NavChart';
+import { AllocationChart } from '../components/charts/AllocationChart';
 import { getIndexByAddress, CATEGORY_META } from '../config/indexes';
 import { getTokenSymbol, MOTO_ADDRESS } from '../config/tokens';
 import { useIndexData } from '../hooks/useIndexData';
@@ -15,7 +17,9 @@ import { useNav } from '../hooks/useNav';
 import { useWallet } from '../hooks/useWallet';
 import { useMotoBalance } from '../hooks/useMotoBalance';
 import { useTxTracker } from '../hooks/useTxTracker';
+import { recordSnapshot, getSnapshots, type NavSnapshot } from '../hooks/useNavHistory';
 import { formatTokenAmount, parseTokenInput, bpsToPercent, toFloat, shortenAddress } from '../lib/format';
+import { estimateSharesOut, estimateMotoOut, investPriceImpact } from '../lib/estimator';
 import { EXPLORER_TX_URL, EXPLORER_ADDRESS_URL } from '../config/network';
 
 const EMPTY_CONFIG: import('../config/indexes').IndexConfig = {
@@ -39,6 +43,15 @@ export function IndexDetailPage() {
   const [tab, setTab] = useState<'invest' | 'redeem'>('invest');
   const [investInput, setInvestInput] = useState('');
   const [redeemInput, setRedeemInput] = useState('');
+  const [snapshots, setSnapshots] = useState<NavSnapshot[]>([]);
+
+  // Record NAV snapshot on each update
+  useEffect(() => {
+    if (nav && address) {
+      recordSnapshot(address, nav.navPerShare, nav.totalMotoValue);
+      setSnapshots(getSnapshots(address, 'all'));
+    }
+  }, [nav, address]);
 
   if (!config || !address) {
     return (
@@ -63,7 +76,6 @@ export function IndexDetailPage() {
   const handleInvest = () => {
     const amount = parseTokenInput(investInput);
     if (amount <= 0n) return;
-    // 2% slippage tolerance on shares
     const minShares = (amount * 98n) / 100n;
     invest(address, amount, minShares);
   };
@@ -71,12 +83,24 @@ export function IndexDetailPage() {
   const handleRedeem = () => {
     const amount = parseTokenInput(redeemInput);
     if (amount <= 0n) return;
-    // 5% slippage on MOTO returned
     redeem(address, amount, 0n);
   };
 
-  const stepLabels = ['Approve', 'Simulate', 'Send'];
-  const stepIndex = actionState === 'approving' ? 0 : actionState === 'simulating' ? 1 : actionState === 'sending' ? 2 : -1;
+  const stepLabels = ['Approve', 'Confirm', 'Simulate', 'Send'];
+  const stepIndex = actionState === 'approving' ? 0 : actionState === 'waiting-approve' ? 1 : actionState === 'simulating' ? 2 : actionState === 'sending' ? 3 : -1;
+
+  // Invest/redeem estimates
+  const investAmount = parseTokenInput(investInput);
+  const redeemAmount = parseTokenInput(redeemInput);
+  const estShares = nav && investAmount > 0n ? estimateSharesOut(investAmount, totalSupply, nav.totalMotoValue) : 0n;
+  const estMoto = nav && redeemAmount > 0n ? estimateMotoOut(redeemAmount, totalSupply, nav.totalMotoValue) : 0n;
+  const impact = nav && investAmount > 0n ? investPriceImpact(investAmount, nav.totalMotoValue) : 0;
+
+  // Allocation chart data
+  const allocData = nav?.components.map((c, i) => ({
+    label: getTokenSymbol(config.components[i]?.address ?? c.address),
+    value: c.actualWeightBps / 100,
+  })) ?? [];
 
   return (
     <div className="space-y-6">
@@ -110,8 +134,9 @@ export function IndexDetailPage() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Composition */}
+        {/* Left column */}
         <div className="lg:col-span-2 space-y-4">
+          {/* Composition table */}
           <Card>
             <CardHeader>
               <h2 className="font-display font-semibold">Composition</h2>
@@ -122,6 +147,7 @@ export function IndexDetailPage() {
                   <thead>
                     <tr className="text-dark-500 text-xs">
                       <th className="text-left pb-3 font-medium">Token</th>
+                      <th className="text-right pb-3 font-medium">Price</th>
                       <th className="text-right pb-3 font-medium">Target</th>
                       <th className="text-right pb-3 font-medium">Actual</th>
                       <th className="text-right pb-3 font-medium">Holdings</th>
@@ -134,6 +160,9 @@ export function IndexDetailPage() {
                       <tr key={i} className="hover:bg-dark-700/20">
                         <td className="py-2.5 font-mono font-medium">
                           {getTokenSymbol(config.components[i]?.address ?? c.address)}
+                        </td>
+                        <td className="py-2.5 text-right font-mono text-xs text-dark-300">
+                          {c.pricePerToken > 0 ? c.pricePerToken.toFixed(4) : '-'}
                         </td>
                         <td className="py-2.5 text-right text-dark-300">
                           {bpsToPercent(c.weightBps)}
@@ -168,29 +197,46 @@ export function IndexDetailPage() {
             </CardBody>
           </Card>
 
-          {/* Weight bars */}
+          {/* NAV Chart */}
           <Card>
+            <CardHeader>
+              <h2 className="font-display font-semibold">NAV Performance</h2>
+            </CardHeader>
             <CardBody>
-              <div className="space-y-3">
-                {nav?.components.map((c, i) => (
-                  <div key={i} className="flex items-center gap-3">
-                    <span className="text-xs font-mono w-12 text-dark-400">
-                      {getTokenSymbol(config.components[i]?.address ?? c.address)}
-                    </span>
-                    <div className="flex-1 flex items-center gap-2">
-                      <ProgressBar
-                        value={c.actualWeightBps / 100}
-                        className="flex-1"
-                      />
-                      <span className="text-xs text-dark-500 w-12 text-right">
-                        {bpsToPercent(c.actualWeightBps)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <NavChart snapshots={snapshots} />
             </CardBody>
           </Card>
+
+          {/* Weight bars + allocation donut */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card>
+              <CardBody>
+                <div className="space-y-3">
+                  {nav?.components.map((c, i) => (
+                    <div key={i} className="flex items-center gap-3">
+                      <span className="text-xs font-mono w-12 text-dark-400">
+                        {getTokenSymbol(config.components[i]?.address ?? c.address)}
+                      </span>
+                      <div className="flex-1 flex items-center gap-2">
+                        <ProgressBar
+                          value={c.actualWeightBps / 100}
+                          className="flex-1"
+                        />
+                        <span className="text-xs text-dark-500 w-12 text-right">
+                          {bpsToPercent(c.actualWeightBps)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardBody>
+            </Card>
+            <Card>
+              <CardBody className="flex items-center justify-center">
+                <AllocationChart data={allocData} height={180} innerRadius={40} />
+              </CardBody>
+            </Card>
+          </div>
 
           {/* Recent TXs */}
           {txs.length > 0 && (
@@ -273,6 +319,23 @@ export function IndexDetailPage() {
                     type="text"
                     inputMode="decimal"
                   />
+                  {/* Estimate preview */}
+                  {investAmount > 0n && nav && (
+                    <div className="bg-dark-800/50 rounded-lg p-3 space-y-1.5">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-dark-400">Est. shares received</span>
+                        <span className="font-mono text-dark-200">
+                          ~{formatTokenAmount(estShares, 18, 4)} {config.symbol}
+                        </span>
+                      </div>
+                      {impact > 2 && (
+                        <div className="flex justify-between text-xs">
+                          <span className="text-yellow-400">Price impact</span>
+                          <span className="font-mono text-yellow-400">{impact.toFixed(2)}%</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {stepIndex >= 0 && (
                     <StepIndicator steps={stepLabels} current={stepIndex} />
                   )}
@@ -297,6 +360,17 @@ export function IndexDetailPage() {
                     type="text"
                     inputMode="decimal"
                   />
+                  {/* Redeem estimate */}
+                  {redeemAmount > 0n && nav && (
+                    <div className="bg-dark-800/50 rounded-lg p-3">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-dark-400">Est. MOTO returned</span>
+                        <span className="font-mono text-dark-200">
+                          ~{formatTokenAmount(estMoto, 18, 4)} MOTO
+                        </span>
+                      </div>
+                    </div>
+                  )}
                   <Button
                     className="w-full"
                     size="lg"

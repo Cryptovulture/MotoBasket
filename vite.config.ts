@@ -46,6 +46,7 @@ export default defineConfig({
           'crypto-libs': ['crypto-browserify', '@noble/hashes'],
           'opnet': ['opnet', '@btc-vision/transaction', '@btc-vision/bitcoin'],
           'react-ui': ['react', 'react-dom', 'react-router-dom'],
+          'recharts': ['recharts'],
         },
       },
     },

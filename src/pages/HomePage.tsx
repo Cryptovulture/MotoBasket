@@ -1,11 +1,17 @@
 import { Link } from 'react-router-dom';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
-import { CATEGORY_INDEXES, EXPERT_INDEXES, CATEGORY_META } from '../config/indexes';
+import { Skeleton } from '../components/ui/Skeleton';
+import { CATEGORY_INDEXES, EXPERT_INDEXES, CATEGORY_META, type IndexConfig } from '../config/indexes';
 import { EXPERTS, getExpertBySlug } from '../config/experts';
 import { getTokenSymbol } from '../config/tokens';
+import { useAllIndexNav, type IndexNavSummary } from '../hooks/useAllIndexNav';
+import { getFirstSnapshot, getLatestSnapshot } from '../hooks/useNavHistory';
+import { formatTokenAmount, toFloat } from '../lib/format';
 
 export function HomePage() {
+  const navMap = useAllIndexNav();
+
   return (
     <div className="space-y-16">
       {/* Hero */}
@@ -37,33 +43,7 @@ export function HomePage() {
         <h2 className="text-xl font-display font-semibold mb-6">Category Indexes</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {CATEGORY_INDEXES.map((idx) => (
-            <Link key={idx.symbol} to={idx.address ? `/index/${idx.address}` : '#'}>
-              <Card hover className="p-5 h-full">
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <h3 className="font-display font-semibold text-lg">{idx.symbol}</h3>
-                    <p className="text-sm text-dark-400">{idx.name}</p>
-                  </div>
-                  <Badge category={idx.category} />
-                </div>
-                <p className="text-xs text-dark-500 mb-3">{idx.description}</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {idx.components.map((c) => (
-                    <span
-                      key={c.address}
-                      className="px-2 py-0.5 text-xs rounded bg-dark-700/50 text-dark-300 font-mono"
-                    >
-                      {getTokenSymbol(c.address)}
-                    </span>
-                  ))}
-                </div>
-                {!idx.address && (
-                  <span className="mt-3 inline-block text-xs text-dark-500 italic">
-                    Not yet deployed
-                  </span>
-                )}
-              </Card>
-            </Link>
+            <IndexCard key={idx.symbol} idx={idx} navData={navMap[idx.address?.toLowerCase() ?? '']} />
           ))}
         </div>
       </section>
@@ -90,13 +70,14 @@ export function HomePage() {
                         className="w-10 h-10 rounded-full ring-2 ring-bitcoin-500/30"
                       />
                     )}
-                    <div>
+                    <div className="flex-1">
                       <h3 className="font-display font-semibold">{idx.symbol}</h3>
                       <p className="text-xs text-dark-400">
                         {expert?.name ?? 'Unknown'} &middot; {expert?.focus}
                       </p>
                     </div>
                   </div>
+                  <NavBadges address={idx.address} navData={navMap[idx.address?.toLowerCase() ?? '']} />
                   <p className="text-xs text-dark-500 mb-3">{idx.description}</p>
                   <div className="flex flex-wrap gap-1.5">
                     {idx.components.map((c) => (
@@ -124,6 +105,86 @@ export function HomePage() {
           <Step num={3} title="Hold or Redeem" desc="Your index token tracks the basket. Redeem anytime to get MOTO back." />
         </div>
       </section>
+    </div>
+  );
+}
+
+function IndexCard({ idx, navData }: { idx: IndexConfig; navData?: IndexNavSummary }) {
+  return (
+    <Link to={idx.address ? `/index/${idx.address}` : '#'}>
+      <Card hover className="p-5 h-full">
+        <div className="flex items-start justify-between mb-3">
+          <div>
+            <h3 className="font-display font-semibold text-lg">{idx.symbol}</h3>
+            <p className="text-sm text-dark-400">{idx.name}</p>
+          </div>
+          <Badge category={idx.category} />
+        </div>
+        <NavBadges address={idx.address} navData={navData} />
+        <p className="text-xs text-dark-500 mb-3">{idx.description}</p>
+        <div className="flex flex-wrap gap-1.5">
+          {idx.components.map((c) => (
+            <span
+              key={c.address}
+              className="px-2 py-0.5 text-xs rounded bg-dark-700/50 text-dark-300 font-mono"
+            >
+              {getTokenSymbol(c.address)}
+            </span>
+          ))}
+        </div>
+        {!idx.address && (
+          <span className="mt-3 inline-block text-xs text-dark-500 italic">
+            Not yet deployed
+          </span>
+        )}
+      </Card>
+    </Link>
+  );
+}
+
+function NavBadges({ address, navData }: { address: string; navData?: IndexNavSummary }) {
+  if (!address) return null;
+
+  // Performance badge from localStorage history
+  const first = getFirstSnapshot(address);
+  const latest = getLatestSnapshot(address);
+  let pctChange: number | null = null;
+  if (first && latest && first.nav !== '0') {
+    const firstNav = Number(BigInt(first.nav));
+    const latestNav = Number(BigInt(latest.nav));
+    if (firstNav > 0) {
+      pctChange = ((latestNav - firstNav) / firstNav) * 100;
+    }
+  }
+
+  if (!navData || navData.loading) {
+    return (
+      <div className="flex gap-3 mb-3">
+        <Skeleton className="h-4 w-24" />
+        <Skeleton className="h-4 w-16" />
+      </div>
+    );
+  }
+
+  if (navData.navPerShare === 0n && navData.tvl === 0n) return null;
+
+  return (
+    <div className="flex items-center gap-3 mb-3 text-xs">
+      <span className="font-mono text-dark-200">
+        NAV {formatTokenAmount(navData.navPerShare, 18, 4)}
+      </span>
+      <span className="text-dark-500">|</span>
+      <span className="font-mono text-dark-400">
+        TVL {formatTokenAmount(navData.tvl, 18, 2)} M
+      </span>
+      {pctChange !== null && Math.abs(pctChange) > 0.01 && (
+        <>
+          <span className="text-dark-500">|</span>
+          <span className={pctChange >= 0 ? 'text-emerald-400 font-medium' : 'text-red-400 font-medium'}>
+            {pctChange >= 0 ? '+' : ''}{pctChange.toFixed(2)}%
+          </span>
+        </>
+      )}
     </div>
   );
 }
